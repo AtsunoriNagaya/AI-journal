@@ -1,5 +1,7 @@
 import os
 
+from prompt_templates import load_prompt_section
+
 
 def generate_with_gemini(prompt: str) -> str:
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -18,10 +20,7 @@ def generate_with_gemini(prompt: str) -> str:
         temperature=0.9,
         google_api_key=api_key,
     )
-    system_text = (
-        "あなたは日本語の日記作家です。与えられた条件を厳守し、自然で読みやすい文体で出力してください。"
-        "各日は見出しの後に本文を続け、本文はおおむね400字（目安350〜450字）にしてください。"
-    )
+    system_text = load_prompt_section("System Prompt")
 
     prompt_template = ChatPromptTemplate.from_messages(
         [

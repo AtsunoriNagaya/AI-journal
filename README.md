@@ -19,14 +19,26 @@
   - イベント見出し自体を省略した場合は「イベントなし」として扱う
 - 旧形式の `key: value` も後方互換で読み込み可能
 
+# プロンプト編集
+- プロンプトは `prompts.md` で編集できる
+- `# System Prompt` はモデルへの共通指示
+- `# User Prompt Template` は日記生成条件テンプレート
+- User Template では以下の変数を使用できる
+  - `{dates}`
+  - `{role}`
+  - `{background}`
+  - `{incidents_text}`
+
 # エラー時の挙動
 - 設定ファイル読込や Gemini 生成に失敗した場合は、フォールバック生成せずエラーのみ表示して終了する
 
 # ファイル構成
 - `character_setting.py`: キャラクター設定の読み込みとパース
+- `prompt_templates.py`: `prompts.md` から見出し単位でプロンプト読込
 - `prompt_builder.py`: プロンプト生成
 - `journal_generator.py`: Gemini呼び出し
 - `main.py`: 全体の実行フロー
+- `prompts.md`: 編集可能なSystem/Userプロンプト
 
 # スタック
 - Python
