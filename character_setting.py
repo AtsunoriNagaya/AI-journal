@@ -4,12 +4,14 @@ from pathlib import Path
 import re
 
 
+# 1件の出来事を表すデータ。
 @dataclass(frozen=True)
 class Incident:
     day: int
     content: str
 
 
+# 日記生成に必要な設定全体。
 @dataclass(frozen=True)
 class JournalSetting:
     start_date: date
@@ -18,15 +20,8 @@ class JournalSetting:
     background: str
     incidents: tuple[Incident, ...]
 
-    @property
-    def incident_day(self) -> int:
-        return self.incidents[0].day if self.incidents else 0
 
-    @property
-    def incident(self) -> str:
-        return self.incidents[0].content if self.incidents else ""
-
-
+# Markdown本文を「見出し -> 本文」の辞書に変換する。
 def _parse_sections(text: str) -> dict[str, str]:
     sections: dict[str, list[str]] = {}
     current_heading: str | None = None
@@ -45,6 +40,7 @@ def _parse_sections(text: str) -> dict[str, str]:
     return {key: "\n".join(value).strip() for key, value in sections.items()}
 
 
+# 候補の見出し名から、最初に見つかった本文を返す。
 def _pick_section(sections: dict[str, str], candidates: list[str]) -> str:
     for key in candidates:
         if key in sections and sections[key].strip():
@@ -53,6 +49,7 @@ def _pick_section(sections: dict[str, str], candidates: list[str]) -> str:
     raise ValueError(f"Markdown見出しが見つかりません: {names}")
 
 
+# 期間セクションから開始日を抽出する。
 def _extract_date(text: str) -> date:
     match = re.search(r"(\d{4}-\d{2}-\d{2})", text)
     if not match:
@@ -60,6 +57,7 @@ def _extract_date(text: str) -> date:
     return date.fromisoformat(match.group(1))
 
 
+# 期間セクションから日数を抽出する。
 def _extract_days(text: str) -> int:
     match = re.search(r"(\d+)\s*日", text)
     if not match:
@@ -67,11 +65,13 @@ def _extract_days(text: str) -> int:
     return int(match.group(1))
 
 
+# イベントセクションから複数イベントを抽出する。
 def _extract_incidents(text: str) -> tuple[Incident, ...]:
     incidents: list[Incident] = []
     current_day: int | None = None
     current_lines: list[str] = []
 
+    # 現在バッファ中のイベントを1件として確定させる。
     def flush_current() -> None:
         nonlocal current_day, current_lines
         if current_day is None:
@@ -108,6 +108,7 @@ def _extract_incidents(text: str) -> tuple[Incident, ...]:
     return tuple(incidents)
 
 
+# すべてのイベント日が期間内か検証する。
 def _validate_incidents(incidents: tuple[Incident, ...], days: int) -> None:
     for inc in incidents:
         if inc.day < 1 or inc.day > days:
@@ -116,46 +117,9 @@ def _validate_incidents(incidents: tuple[Incident, ...], days: int) -> None:
             )
 
 
-def _load_legacy_key_value(text: str) -> JournalSetting | None:
-    pattern = re.compile(r"^\s*(?:[-*]\s*)?([a-z_]+)\s*:\s*(.+?)\s*$")
-    values: dict[str, str] = {}
-
-    for raw_line in text.splitlines():
-        match = pattern.match(raw_line.strip())
-        if not match:
-            continue
-        key, value = match.groups()
-        values[key] = value.strip()
-
-    required_keys = {
-        "start_date",
-        "days",
-        "role",
-        "background",
-        "incident_day",
-        "incident",
-    }
-    if not required_keys.issubset(values.keys()):
-        return None
-
-    incidents = (Incident(day=int(values["incident_day"]), content=values["incident"]),)
-    _validate_incidents(incidents, int(values["days"]))
-
-    return JournalSetting(
-        start_date=date.fromisoformat(values["start_date"]),
-        days=int(values["days"]),
-        role=values["role"],
-        background=values["background"],
-        incidents=incidents,
-    )
-
-
+# persona.md から設定を読み込み、検証済みの JournalSetting を返す。
 def load_setting_from_markdown(file_path: str = "persona.md") -> JournalSetting:
     text = Path(file_path).read_text(encoding="utf-8")
-
-    legacy = _load_legacy_key_value(text)
-    if legacy is not None:
-        return legacy
 
     sections = _parse_sections(text)
     role_text = _pick_section(sections, ["主人公", "キャラクター", "人物設定"])

@@ -4,6 +4,7 @@ from character_setting import JournalSetting
 from prompt_templates import load_prompt_section
 
 
+# 開始日と日数から、見出し用の日付一覧を作る。
 def build_dates(setting: JournalSetting) -> list[str]:
     return [
         (setting.start_date + timedelta(days=i)).strftime("%m/%d")
@@ -11,8 +12,10 @@ def build_dates(setting: JournalSetting) -> list[str]:
     ]
 
 
+# 設定値をテンプレートに埋め込み、最終プロンプト文字列を作る。
 def build_prompt(setting: JournalSetting) -> str:
     dates = "、".join(build_dates(setting))
+    # イベント件数に応じて、プロンプトに渡す説明を切り替える。
     if not setting.incidents:
         incidents_text = "- イベント: 特になし"
     elif len(setting.incidents) == 1:

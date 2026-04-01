@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 
 
+# prompts.md から指定見出しの本文を読み込む。
 def load_prompt_section(section_name: str, file_path: str = "prompts.md") -> str:
     text = Path(file_path).read_text(encoding="utf-8")
     pattern = re.compile(r"^#{1,6}\s+(.+)$")
@@ -9,6 +10,7 @@ def load_prompt_section(section_name: str, file_path: str = "prompts.md") -> str
     sections: dict[str, list[str]] = {}
     current_heading: str | None = None
 
+    # Markdownを見出し単位で分割して辞書化する。
     for raw_line in text.splitlines():
         line = raw_line.rstrip()
         heading_match = pattern.match(line)
