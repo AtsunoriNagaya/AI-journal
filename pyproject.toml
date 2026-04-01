@@ -1,0 +1,11 @@
+[project]
+name = "ai-journal"
+version = "0.1.0"
+description = "AI generate sf journal"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+	"langchain>=0.3.0",
+	"langchain-google-genai>=2.1.0",
+	"python-dotenv>=1.1.0",
+]
