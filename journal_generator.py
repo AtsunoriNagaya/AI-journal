@@ -3,6 +3,7 @@ import os
 from prompt_templates import load_prompt_section
 
 
+# Geminiを使って日記本文を生成する。
 def generate_with_gemini(prompt: str) -> str:
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
@@ -22,6 +23,7 @@ def generate_with_gemini(prompt: str) -> str:
     )
     system_text = load_prompt_section("System Prompt")
 
+    # System/Humanの2メッセージ構成でLLMへ入力する。
     prompt_template = ChatPromptTemplate.from_messages(
         [
             ("system", system_text),
@@ -29,5 +31,6 @@ def generate_with_gemini(prompt: str) -> str:
         ]
     )
 
+    # PromptTemplate -> LLM -> 文字列パーサー のチェーンで実行。
     chain = prompt_template | llm | StrOutputParser()
     return chain.invoke({"user_prompt": prompt})

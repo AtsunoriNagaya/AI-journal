@@ -6,9 +6,11 @@ from journal_generator import generate_with_gemini
 from prompt_builder import build_prompt
 
 
+# 設定読込 -> プロンプト生成 -> LLM実行 の順に処理する。
 def main() -> None:
     load_dotenv()
 
+    # persona.md を読み込んで入力設定を作成する。
     try:
         setting = load_setting_from_markdown()
     except Exception as error:
@@ -17,6 +19,7 @@ def main() -> None:
 
     prompt = build_prompt(setting)
 
+    # 生成に失敗した場合は内容を出さずエラーで終了する。
     try:
         diary = generate_with_gemini(prompt)
     except Exception as error:
