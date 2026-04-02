@@ -137,7 +137,7 @@ def _generate_with_history(setting: JournalSetting) -> str:
         日別に生成された日記本文を改行で結合したもの。
         出力途中の各日分が リアルタイム で stdout に流される。
     """
-    config = _load_openrouter_config(max_output_tokens_default=1500)
+    config = _load_openrouter_config(max_output_tokens_default=900)
 
     try:
         from langchain_core.chat_history import InMemoryChatMessageHistory

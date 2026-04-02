@@ -9,28 +9,28 @@
 各モジュールは以下の責務を持ちます：
 
 ### 入力層（Input）
-- **character_setting.py**
-  - 責務: `persona.md` から設定を読み込み、型安全な `JournalSetting` オブジェクトに変換
+- **src/input/character_setting.py**
+  - 責務: `config/persona.md` から設定を読み込み、型安全な `JournalSetting` オブジェクトに変換
   - 検証: 期間、イベント日数が有効範囲内か確認
   - 依存: なし（ファイル読み込みのみ）
   - アウトプット: `JournalSetting` データクラス
 
 ### テンプレート層（Template）
-- **prompt_templates.py**
-  - 責務: `prompts.md` から Markdown セクションを効率的に読み込む
+- **src/templates/prompt_templates.py**
+  - 責務: `config/prompts.md` から Markdown セクションを効率的に読み込む
   - 管理: テンプレートセクション名の一元管理
   - 依存: なし（ファイル読み込みのみ）
   - アウトプット: テキスト文字列
 
 ### プロンプト生成層（Prompt Building）
-- **prompt_builder.py**
+- **src/builders/prompt_builder.py**
   - 責務: `JournalSetting` とテンプレートから日別プロンプトを生成
   - 処理: 日付計算、イベント情報の整形、変数埋め込み
-  - 依存: `character_setting.py`、`prompt_templates.py`
+  - 依存: `src/input/character_setting.py`、`src/templates/prompt_templates.py`
   - アウトプット: LLM に渡すプロンプト文字列
 
 ### 生成層（Generation）
-- **journal_generator.py**
+- **src/generators/journal_generator.py**
   - 責務: OpenRouter API の呼び出し、LangChain チェーン管理、メモリ管理
   - 処理:
     - 環境変数から API 設定を読み込む
@@ -38,7 +38,7 @@
     - メモリに過去の出力を蓄積
     - レート制限時の再試行
     - stdout への進捗出力
-  - 依存: `prompt_builder.py`、`prompt_templates.py`（テンプレート読み込み）
+  - 依存: `src/builders/prompt_builder.py`、`src/templates/prompt_templates.py`（テンプレート読み込み）
   - アウトプット: 生成済みの日記本文
 
 ### 制御層（Main）
@@ -62,19 +62,17 @@
 ## データフロー
 
 ```
-persona.md
+config/persona.md
   ↓
-[character_setting.py] → JournalSetting
+[src/input/character_setting.py] → JournalSetting
   ↓
-[main.py]
+[main.py]（実行を統制）
   ↓
-[journal_generator.py]
-  ├─ 日別プロンプトを生成
-  └─ OpenRouter API を呼び出す
+[src/generators/journal_generator.py]
   ↓
-[prompt_builder.py] ← prompts.md / prompt_templates.py
+[src/builders/prompt_builder.py] ← [src/templates/prompt_templates.py] ← config/prompts.md
   ↓
-(プロンプト文字列)
+(日別プロンプト文字列)
   ↓
 OpenRouter API
   ↓
@@ -108,18 +106,18 @@ Day 7:
 新しい機能追加時の参考：
 
 ### 新しい出力形式（e.g., JSON）
-- **追加場所**: `journal_generator.py` の最終出力処理
+- **追加場所**: `src/generators/journal_generator.py` の最終出力処理
 - **注意**: メモリ層（LangChain）はテキストを扱うため、構造化データ化する場合は日別生成後に変換する
 
 ### 新しい入力形式（e.g., YAML）
-- **追加場所**: `character_setting.py` に新パーサーを追加
+- **追加場所**: `src/input/character_setting.py` に新パーサーを追加
 - **注意**: 出力は必ず `JournalSetting` か互換データクラスに変換
 
 ### 新しいテンプレート変数
 - **追加方法**:
-  1. `character_setting.py` に新フィールドを追加
-  2. `prompt_builder.py` で変数を埋め込み
-  3. `prompts.md` で `{new_variable}` を使用
+  1. `src/input/character_setting.py` に新フィールドを追加
+  2. `src/builders/prompt_builder.py` で変数を埋め込み
+  3. `config/prompts.md` で `{new_variable}` を使用
 
 ### ローカル実行時のデバッグ
 - 環境変数 `AI_JOURNAL_MAX_RETRIES=0` で再試行を無効化
@@ -129,11 +127,11 @@ Day 7:
 
 | エラー種類 | 処理層 | 対応 |
 |-----------|--------|------|
-| ファイル未検出 | `character_setting.py` | ValueError + sys.exit(1) |
-| パース失敗 | `character_setting.py` | ValueError + sys.exit(1) |
-| テンプレート未検出 | `prompt_templates.py` | ValueError（呼び出し元で処理） |
-| API キー未設定 | `journal_generator.py` | RuntimeError |
-| レート制限 | `journal_generator.py` | 再試行 + 指数バックオフ |
+| ファイル未検出 | `src/input/character_setting.py` | ValueError を送出（`main.py` で捕捉して終了） |
+| パース失敗 | `src/input/character_setting.py` | ValueError を送出（`main.py` で捕捉して終了） |
+| テンプレート未検出 | `src/templates/prompt_templates.py` | ValueError を送出（呼び出し元に伝播） |
+| API キー未設定 | `src/generators/journal_generator.py` | RuntimeError |
+| レート制限 | `src/generators/journal_generator.py` | 再試行 + 指数バックオフ |
 | 日記生成失敗 | `main.py` | RuntimeError を catch して終了 |
 
 ## テスト戦略
@@ -142,12 +140,18 @@ Day 7:
 
 ```python
 # character_setting のテスト例
+from src.input.character_setting import load_setting_from_markdown
+
+
 def test_load_setting():
-    setting = load_setting_from_markdown("test_persona.md")
+  setting = load_setting_from_markdown("config/persona.md")
     assert setting.days == 7
     assert len(setting.incidents) == 2
 
 # prompt_builder のテスト例
+from src.builders.prompt_builder import build_day_prompt
+
+
 def test_build_day_prompt():
     prompt = build_day_prompt(setting, day_number=1)
     assert "04/01" in prompt
@@ -157,12 +161,12 @@ def test_build_day_prompt():
 ## 開発時の注意
 
 - **ブレーキングチェンジ**: `JournalSetting` の構造変更は他すべてに影響するため、慎重に
-- **テンプレート管理**: `prompts.md` のセクション名は `prompt_templates.py` で参照される
-- **環境変数**: `.env.example` を追加して初期化例を明確に
+- **テンプレート管理**: `config/prompts.md` のセクション名は `src/templates/prompt_templates.py` で参照される
+- **環境変数**: `.env.example` はプロジェクトルートを正とする
 
 ## まとめ
 
 - 各モジュールは1つの責務のみを持つ
-- 依存関係は入力層 → 生成層 → 制御層の順
+- 依存関係は入力層 → テンプレート層/プロンプト生成層 → 生成層 → 制御層の順
 - 新機能追加時はまず責務の分離を検討する
 - テストは層ごとに独立して実施可能
