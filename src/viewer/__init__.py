@@ -8,6 +8,7 @@ from src.viewer.journal_repository import (
 )
 from src.viewer.markdown_renderer import render_markdown_html
 from src.viewer.comment_repository import CommentRepository, JournalComment
+from src.viewer.persona_reply_service import PersonaReplyService
 
 __all__ = [
     "JournalEntry",
@@ -17,4 +18,5 @@ __all__ = [
     "render_markdown_html",
     "CommentRepository",
     "JournalComment",
+    "PersonaReplyService",
 ]

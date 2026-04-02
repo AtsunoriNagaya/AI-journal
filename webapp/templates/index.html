@@ -62,7 +62,7 @@
                 </div>
 
                 <section class="comment-panel">
-                    <h3>コメント</h3>
+                    <h3>コメント（送信すると {{ persona_name }} が返信します）</h3>
 
                     {% if comment_saved %}
                     <p class="comment-flash success">コメントを保存しました。</p>
@@ -84,8 +84,15 @@
 
                     <ul class="comment-list">
                         {% for comment in comments %}
-                        <li class="comment-item">
-                            <p class="comment-meta">{{ comment.author }} ・ {{ comment.created_at_label }}</p>
+                        <li class="comment-item role-{{ comment.role }}">
+                            <p class="comment-meta">
+                                {% if comment.role == "persona" %}
+                                ペルソナ
+                                {% else %}
+                                ユーザー
+                                {% endif %}
+                                （{{ comment.author }}） ・ {{ comment.created_at_label }}
+                            </p>
                             <p class="comment-body">{{ comment.body }}</p>
                         </li>
                         {% else %}
