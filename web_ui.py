@@ -111,6 +111,7 @@ def create_app(
         reply_service: PersonaReplyGenerator = app.state.persona_reply_service
         query = q.strip()
         entries = repository.list_entries(query=query)
+        persona_view = _build_persona_view(reply_service)
 
         selected_date = _resolve_selected_date(entries, date_value)
         selected_entry = _pick_selected_entry(entries, selected_date)
@@ -142,7 +143,9 @@ def create_app(
                 "comments": comments,
                 "comment_error": comment_error.strip(),
                 "comment_saved": comment_saved == "1",
-                "persona_name": reply_service.persona_name,
+                "persona_name": persona_view["name"],
+                "persona_background": persona_view["background"],
+                "persona_tone_keywords": persona_view["tone_keywords"],
             },
         )
 
@@ -295,6 +298,30 @@ def _build_home_url(
     if comment_saved:
         params["comment_saved"] = "1"
     return f"/?{urlencode(params)}"
+
+
+def _build_persona_view(reply_service: PersonaReplyGenerator) -> dict[str, str]:
+    name = _compact_text(getattr(reply_service, "persona_name", "ペルソナ"), max_length=38)
+    if not name:
+        name = "ペルソナ"
+
+    background = _compact_text(getattr(reply_service, "persona_background", ""), max_length=110)
+    tone_keywords = _compact_text(getattr(reply_service, "persona_tone_keywords", ""), max_length=56)
+    return {
+        "name": name,
+        "background": background,
+        "tone_keywords": tone_keywords,
+    }
+
+
+def _compact_text(raw_value: object, *, max_length: int) -> str:
+    if not isinstance(raw_value, str):
+        return ""
+
+    normalized = " ".join(part.strip() for part in raw_value.replace("\r\n", "\n").splitlines() if part.strip())
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max_length - 1].rstrip() + "…"
 
 
 app = create_app()

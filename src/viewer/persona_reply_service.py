@@ -31,7 +31,20 @@ class PersonaReplyService:
 
     @property
     def persona_name(self) -> str:
-        return self._setting.role
+        # UI上は長文ロールをそのまま出さず、先頭行を表示名として使う。
+        for line in self._setting.role.splitlines():
+            candidate = line.strip()
+            if candidate:
+                return candidate
+        return "ペルソナ"
+
+    @property
+    def persona_background(self) -> str:
+        return self._setting.background
+
+    @property
+    def persona_tone_keywords(self) -> str:
+        return self._setting.tone_keywords
 
     def generate_reply(
         self,
