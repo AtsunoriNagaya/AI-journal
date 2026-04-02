@@ -12,6 +12,7 @@
 
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -205,13 +206,20 @@ def _generate_with_history(
             max_retries=config.max_retries,
         ).strip()
         diary_parts.append(day_diary)
-        _save_day_diary_markdown(
-            output_dir=output_dir,
-            start_date=setting.start_date,
-            day_number=day_number,
-            diary_text=day_diary,
-        )
         print(day_diary, flush=True)
+        try:
+            _save_day_diary_markdown(
+                output_dir=output_dir,
+                start_date=setting.start_date,
+                day_number=day_number,
+                diary_text=day_diary,
+            )
+        except OSError as error:
+            print(
+                f"[WARN] 日記ファイルの保存に失敗しました ({day_number}日目): {error}",
+                file=sys.stderr,
+                flush=True,
+            )
         if day_number < setting.days:
             print(flush=True)
 
