@@ -20,7 +20,7 @@ class SaveDayDiaryMarkdownTests(unittest.TestCase):
 
             self.assertIsNotNone(output_path)
             self.assertEqual(output_path, output_dir / "2026-04-02.md")
-            self.assertTrue(output_path is not None and output_path.exists())
+            self.assertTrue(output_path.exists())
             self.assertEqual(output_path.read_text(encoding="utf-8"), "2日目の本文")
 
     def test_overwrite_existing_file(self) -> None:
