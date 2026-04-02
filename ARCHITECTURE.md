@@ -2,7 +2,7 @@
 
 ## 概要
 
-このプロジェクトは、生成AI（OpenRouter API）を使用して、指定日期間の日記を自動生成するツールです。日別ルームとメモリを使用して、過去の日記を踏まえた一貫性のある出力を実現します。
+このプロジェクトは、生成AI（OpenRouter API）を使用して、指定期間の日記を自動生成するツールです。日別ループとメモリを組み合わせて、過去との整合性がある出力を実現します。
 
 ## 責務分離
 
@@ -35,8 +35,8 @@
   - 処理:
     - 環境変数から API 設定を読み込む
     - 日別ループでプロンプト実行
-    - メモリに従来の出力を蓄積
-    - レート制限時の再試行、モデルフォールバック
+    - メモリに過去の出力を蓄積
+    - レート制限時の再試行
     - stdout への進捗出力
   - 依存: `prompt_builder.py`、`prompt_templates.py`（テンプレート読み込み）
   - アウトプット: 生成済みの日記本文
@@ -63,23 +63,22 @@
 
 ```
 persona.md
-    ↓
+  ↓
 [character_setting.py] → JournalSetting
-                              ↓
-                         [main.py]
-                          ↓    ↓
-                          ↓    └→ [journal_generator.py]
-                          ↓              ↓
-prompts.md     ↓         ↓
-    ↓          └→ [prompt_templates.py]     ↓
-    ↓                     ↓
-    └─────────────→ [prompt_builder.py] ────┘
-                          ↓
-                    (プロンプト文字列)
-                          ↓
-                    OpenRouter API
-                          ↓
-                    stdout → 日記本文
+  ↓
+[main.py]
+  ↓
+[journal_generator.py]
+  ├─ 日別プロンプトを生成
+  └─ OpenRouter API を呼び出す
+  ↓
+[prompt_builder.py] ← prompts.md / prompt_templates.py
+  ↓
+(プロンプト文字列)
+  ↓
+OpenRouter API
+  ↓
+stdout → 日記本文
 ```
 
 ## 日別生成ループ
@@ -109,8 +108,8 @@ Day 7:
 新しい機能追加時の参考：
 
 ### 新しい出力形式（e.g., JSON）
-- **追加場所**: `journal_generator.py` の最後で戻り値の形式変更
-- **注意**: メモリ層（LangChain）はテキストのみ対応のため、`_generate_with_history()` の出力処理を別にする
+- **追加場所**: `journal_generator.py` の最終出力処理
+- **注意**: メモリ層（LangChain）はテキストを扱うため、構造化データ化する場合は日別生成後に変換する
 
 ### 新しい入力形式（e.g., YAML）
 - **追加場所**: `character_setting.py` に新パーサーを追加
@@ -128,14 +127,13 @@ Day 7:
 
 ## エラー処理の責務
 
-| エラー種類 | 처리層 | 対応 |
+| エラー種類 | 処理層 | 対応 |
 |-----------|--------|------|
 | ファイル未検出 | `character_setting.py` | ValueError + sys.exit(1) |
 | パース失敗 | `character_setting.py` | ValueError + sys.exit(1) |
 | テンプレート未検出 | `prompt_templates.py` | ValueError（呼び出し元で処理） |
 | API キー未設定 | `journal_generator.py` | RuntimeError |
-| モデル未提供 | `journal_generator.py` | 재시도 → RuntimeError |
-| 429 レート制限 | `journal_generator.py` | 재시도 + 지수 백オフ |
+| レート制限 | `journal_generator.py` | 再試行 + 指数バックオフ |
 | 日記生成失敗 | `main.py` | RuntimeError を catch して終了 |
 
 ## テスト戦略
@@ -166,5 +164,5 @@ def test_build_day_prompt():
 
 - 各モジュールは1つの責務のみを持つ
 - 依存関係は入力層 → 生成層 → 制御層の順
-- 新機能追加時はまず責務の分離を検討す
+- 新機能追加時はまず責務の分離を検討する
 - テストは層ごとに独立して実施可能

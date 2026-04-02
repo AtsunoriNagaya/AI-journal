@@ -1,6 +1,6 @@
 # AI Journal
 
-生成AI（OpenRouter API）を使用して、1週間の一貫性のある日記を自動生成するツール。日別ループとチャット履歴を活用し、各日の内容が矛盾しないようにしています。
+生成AI（OpenRouter API）を使用して、1週間の一貫性のある日記を自動生成するツール。日別ループと会話履歴を使い、前日との整合性を保ちながら1日ずつ本文を生成します。
 
 ## クイックスタート
 
@@ -46,18 +46,34 @@ stdout に日付見出し付きの日記が1日ずつリアルタイムで出力
 ## 主人公
 新卒のエンジニア（開発未経験）
 
-## 状況
+## 背景
 コロナ禍で外出自粛が続く
 
 ## 期間
 開始日 2026-04-01
 7日間
 
-## イベント
+## 1週間のテーマ
+不安定な通信環境のなかで、少しずつ仕事に慣れていく
+
+## 平日傾向
+仕事、通勤、オンライン会議、昼休み、同僚とのやり取りを中心にする
+
+## 休日傾向
+家での休息、買い物、軽い気分転換、生活の整え直しを中心にする
+
+## 文体
+自然体、やわらかい、読みやすい
+
+## 想定読者
+同じように日常を積み重ねる読者
+
+## 現実味の制約
+主人公の生活圏で起こりうる出来事に限定し、過剰な偶然や大事件は避ける
+
+## イベント（任意）
 2日目に発生
 通信障害
-
-7日まで完全になおらず、つながるときとつながらないときがある（不安定）
 ```
 
 ### プロンプト設定（prompts.md）
@@ -65,7 +81,7 @@ stdout に日付見出し付きの日記が1日ずつリアルタイムで出力
 - `# System Prompt`: LLM への共通指示（系統的な指示）
 - `# Common Guidelines`: 全日共通のガイドライン
 - `# Daily User Prompt Template`: 日別プロンプトテンプレート
-  - 使用可能な変数: `{date}`, `{day_number}`, `{total_days}`, `{role}`, `{background}`, `{incident_text}`
+   - 使用可能な変数: `{persona_block}`, `{date}`, `{day_number}`, `{total_days}`, `{day_mode}`, `{fixed_event_today}`, `{previous_summary}`, `{structure_hint}`, `{uniqueness_hint}`, `{avoid_repetition_hint}`
 
 ### 環境変数設定（.env）
 
@@ -75,7 +91,6 @@ OPENROUTER_API_KEY=your-api-key-here
 
 # 用意推奨
 OPENROUTER_MODEL=qwen/qwen3.6-plus-preview:free
-OPENROUTER_FALLBACK_MODELS=openai/gpt-oss-120b:free
 
 # オプション（デフォルト値あり）
 AI_JOURNAL_MAX_RETRIES=1
@@ -93,7 +108,7 @@ OPENROUTER_SITE_NAME=MyApp
 | **prompt_templates.py** | prompts.md のテンプレート読み込み |
 | **prompt_builder.py** | 日別プロンプトの生成 |
 | **journal_generator.py** | OpenRouter API 呼び出し・メモリ管理 |
-| **persona.md** | ペルソナ・期間・イベントの定義 |
+| **persona.md** | ペルソナ・期間・固定条件の定義 |
 | **prompts.md** | System・共通・日別プロンプトテンプレート |
 | **ARCHITECTURE.md** | 詳細な責務と拡張ガイド |
 
@@ -108,7 +123,8 @@ OPENROUTER_SITE_NAME=MyApp
    ↓
 プロンプト生成層 (prompt_builder)
    ↓
-生成層 (journal_generator) ← メモリベースの日別ループ
+生成層 (journal_generator)
+   └─ メモリベースの日別ループで本文生成
    ↓
 制御層 (main) ← エラーハンドリング
    ↓
@@ -127,7 +143,7 @@ stdout → 日記本文
 ```
 [ERROR] 日記の生成に失敗しました: OpenRouter のレート制限またはモデル未提供...
 ```
-→ 別のモデルを試すか、`AI_JOURNAL_MAX_RETRIES` を増やしてください
+→ 少し時間をおいて再実行してください。現在はフォールバックを使わないため、モデル切り替えは `OPENROUTER_MODEL` の変更で行います
 
 ### 日記が短すぎる
 → prompts.md の `# Daily User Prompt Template` で「おおむね400字」を「おおむね450字」に変更するか、`AI_JOURNAL_MAX_OUTPUT_TOKENS` を上げてください
