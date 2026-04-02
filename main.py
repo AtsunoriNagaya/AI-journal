@@ -10,7 +10,7 @@
   2. ペルソナ情報の取得 (character_setting)
   3. 日記生成の実行 (journal_generator)
      - 内部で prompt_builder と prompt_templates を使用
-  4. 結果の出力と終了
+    4. 結果の出力（stdout + journals/ へ保存）と終了
 
 このモジュールは処理の組立て役であり、各処理の詳細には関わらない。
 """
@@ -39,7 +39,8 @@ def main() -> None:
 
     # 生成に失敗した場合は内容を出さずエラーで終了する。
     try:
-        generate_with_openrouter(setting)
+        output_dir = Path(__file__).parent / "journals"
+        generate_with_openrouter(setting, output_dir=output_dir)
     except Exception as error:
         print(f"[ERROR] 日記の生成に失敗しました: {error}")
         sys.exit(1)

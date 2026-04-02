@@ -2,7 +2,7 @@
 
 ## 概要
 
-このプロジェクトは、生成AI（OpenRouter API）を使用して、指定期間の日記を自動生成するツールです。日別ループとメモリを組み合わせて、過去との整合性がある出力を実現します。
+このプロジェクトは、生成AI（OpenRouter API）を使用して、指定期間の日記を自動生成するツールです。日別ループとメモリを組み合わせて、過去との整合性がある出力を実現し、結果を stdout と Markdown ファイルに出力します。
 
 ## 責務分離
 
@@ -36,6 +36,7 @@
     - 環境変数から API 設定を読み込む
     - 日別ループでプロンプト実行
     - メモリに過去の出力を蓄積
+    - `journals/YYYY-MM-DD.md` への日別保存
     - レート制限時の再試行
     - stdout への進捗出力
   - 依存: `src/builders/prompt_builder.py`、`src/templates/prompt_templates.py`（テンプレート読み込み）
@@ -50,7 +51,7 @@
     3. 生成処理の実行
     4. エラーハンドリング
   - 依存: すべてのモジュール
-  - アウトプット: なし（結果は stdout に流される）
+  - アウトプット: 保存先ディレクトリ指定（`journals/`）
 
 ## スタック
 
@@ -76,7 +77,7 @@ config/persona.md
   ↓
 OpenRouter API
   ↓
-stdout → 日記本文
+stdout + journals/*.md → 日記本文
 ```
 
 ## 日別生成ループ
@@ -86,19 +87,19 @@ stdout → 日記本文
 ```
 Day 1:
   Prompt → LLM → Output (1日目の日記)
-  Output を stdout に流す
+  Output を stdout に流し、journals/2026-04-01.md へ保存
   メモリに ["1日目のテキスト"] を追加
 
 Day 2:
   Prompt (with history) → LLM(前日を踏まえた状態で) → Output (2日目の日記)
-  出力を stdout に流す
+  出力を stdout に流し、journals/2026-04-02.md へ保存
   メモリに ["1日目", "2日目"] を追加
 
 ...
 
 Day 7:
   Prompt (with 6日分の履歴) → LLM → Output
-  出力を stdout に流す
+  出力を stdout に流し、対応日付の Markdown に保存
 ```
 
 ## 拡張ポイント
