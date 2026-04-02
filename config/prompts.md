@@ -1,6 +1,6 @@
 ﻿# Persona Template
 
-# 日記ペルソナ
+## 日記ペルソナ
 
 ## 主人公
 {role}

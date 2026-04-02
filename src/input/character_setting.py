@@ -188,7 +188,7 @@ def _validate_incidents(incidents: tuple[Incident, ...], days: int) -> None:
 
 # persona.md から設定を読み込み、検証済みの JournalSetting を返す。
 def load_setting_from_markdown(file_path: str = "persona.md") -> JournalSetting:
-    text = Path(file_path).read_text(encoding="utf-8")
+    text = Path(file_path).read_text(encoding="utf-8-sig")
 
     sections = _parse_sections(text)
     role_text = _pick_section(sections, ["主人公", "キャラクター", "人物設定"])

@@ -144,7 +144,7 @@ from src.input.character_setting import load_setting_from_markdown
 
 
 def test_load_setting():
-  setting = load_setting_from_markdown("config/persona.md")
+    setting = load_setting_from_markdown("config/persona.md")
     assert setting.days == 7
     assert len(setting.incidents) == 2
 
