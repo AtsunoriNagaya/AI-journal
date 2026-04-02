@@ -1,10 +1,21 @@
+"""Markdown テンプレートの読み込みモジュール。
+
+責務:
+  - prompts.md から Markdown 見出しで整理されたテンプレートを読み込む
+  - セクション別の効率的な検索と取得
+  - エラー時の有用なメッセージ提示
+
+このモジュールはファイル I/O と文字列パース専門。LLM や生成処理には関わらない。
+"""
+
 from pathlib import Path
 import re
 
 
 # prompts.md から指定見出しの本文を読み込む。
 def load_prompt_section(section_name: str, file_path: str = "prompts.md") -> str:
-    text = Path(file_path).read_text(encoding="utf-8")
+    # UTF-8 BOM 付きファイルでも先頭見出しを正しく読めるようにする
+    text = Path(file_path).read_text(encoding="utf-8-sig")
     pattern = re.compile(r"^#{1,6}\s+(.+)$")
 
     sections: dict[str, list[str]] = {}
