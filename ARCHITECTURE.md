@@ -53,6 +53,25 @@
   - 依存: すべてのモジュール
   - アウトプット: 保存先ディレクトリ指定（`journals/`）
 
+### 閲覧層（Web UI）
+- **web_ui.py**
+  - 責務: 生成済み Markdown の一覧・検索・詳細表示 API と HTML 画面を提供
+  - 処理:
+    - `journals/` から読み込み
+    - 日付降順ソート
+    - キーワード検索
+    - 前日/翌日ナビゲーション
+  - 依存: `src/viewer/journal_repository.py`、`src/viewer/markdown_renderer.py`
+  - アウトプット: ブラウザ向け HTML と `/api/journals*` の JSON
+
+- **src/viewer/journal_repository.py**
+  - 責務: `journals/YYYY-MM-DD.md` の列挙・読み込み・検索・隣接日計算
+  - 依存: なし（ファイル読み込みのみ）
+
+- **src/viewer/markdown_renderer.py**
+  - 責務: Markdown を HTML に変換し、許可タグのみ残す
+  - 依存: markdown, bleach
+
 ## スタック
 
 - **Python 3.11+**: タイプセーフな実装、ジェネリクス対応
@@ -78,6 +97,10 @@ config/persona.md
 OpenRouter API
   ↓
 stdout + journals/*.md → 日記本文
+  ↓
+[src/viewer/journal_repository.py] + [src/viewer/markdown_renderer.py]
+  ↓
+[web_ui.py] → HTML UI / JSON API
 ```
 
 ## 日別生成ループ
@@ -109,6 +132,12 @@ Day 7:
 ### 新しい出力形式（e.g., JSON）
 - **追加場所**: `src/generators/journal_generator.py` の最終出力処理
 - **注意**: メモリ層（LangChain）はテキストを扱うため、構造化データ化する場合は日別生成後に変換する
+
+### コメント返信機能（将来拡張）
+- **追加場所**: `web_ui.py` の API 層にコメント投稿エンドポイントを追加
+- **注意**:
+  - 初版では閲覧専用を維持し、生成フロー（`main.py` / `journal_generator.py`）とは分離する
+  - コメント履歴は Markdown 追記ではなく、別ストレージ（JSON or SQLite）を検討する
 
 ### 新しい入力形式（e.g., YAML）
 - **追加場所**: `src/input/character_setting.py` に新パーサーを追加
