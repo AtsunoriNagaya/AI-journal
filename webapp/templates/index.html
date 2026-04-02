@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Journal Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+</head>
+<body>
+    <div class="aura" aria-hidden="true"></div>
+    <main class="page-shell">
+        <header class="hero reveal delay-1">
+            <p class="hero-kicker">AI JOURNAL VIEWER</p>
+            <h1>日記を、読み返しやすく。</h1>
+            <p class="hero-copy">生成済みの Markdown 日記を一覧・検索でたどり、前日/翌日の流れを確認できます。</p>
+            <p class="hero-meta">読み込み元: {{ journals_dir }}</p>
+        </header>
+
+        <section class="journal-grid">
+            <aside class="panel timeline reveal delay-2">
+                <form class="search-form" method="get" action="/">
+                    <label for="q">本文検索</label>
+                    <div class="search-row">
+                        <input id="q" type="search" name="q" value="{{ query }}" placeholder="キーワードを入力">
+                        <button type="submit">検索</button>
+                    </div>
+                </form>
+
+                <p class="result-count">{{ entries | length }}件</p>
+
+                <ul class="entry-list">
+                    {% for item in entries %}
+                    <li class="entry-card {% if selected_entry and selected_entry.journal_date == item.journal_date %}is-active{% endif %}">
+                        <a href="/?date={{ item.journal_date.isoformat() }}{{ query_suffix }}">
+                            <span class="entry-date">{{ item.journal_date.isoformat() }}</span>
+                            <span class="entry-excerpt">{{ item.excerpt }}</span>
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="empty-list">
+                        該当する日記がありません。
+                    </li>
+                    {% endfor %}
+                </ul>
+            </aside>
+
+            <article class="panel diary reveal delay-3">
+                {% if selected_entry %}
+                <header class="diary-header">
+                    <h2>{{ selected_entry.journal_date.isoformat() }}</h2>
+                    <nav class="day-nav" aria-label="日付移動">
+                        {% if previous_date %}
+                        <a class="ghost-button" href="/?date={{ previous_date.isoformat() }}{{ query_suffix }}">前日へ</a>
+                        {% endif %}
+                        {% if next_date %}
+                        <a class="ghost-button" href="/?date={{ next_date.isoformat() }}{{ query_suffix }}">翌日へ</a>
+                        {% endif %}
+                    </nav>
+                </header>
+                <div class="markdown-body">
+                    {{ selected_entry_html | safe }}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <h2>日記がありません</h2>
+                    <p>先に生成コマンドを実行して journals 配下に Markdown を作成してください。</p>
+                </div>
+                {% endif %}
+            </article>
+        </section>
+    </main>
+</body>
+</html>

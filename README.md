@@ -50,6 +50,27 @@ journals/
    ...
 ```
 
+## Web UIで確認する
+
+生成済みの日記をブラウザで確認できます。
+
+```bash
+uv run uvicorn web_ui:app --reload
+```
+
+起動後、`http://127.0.0.1:8000` を開いてください。
+
+初版の機能：
+- 日付一覧（新しい順）
+- Markdown の整形表示
+- 本文キーワード検索
+- 前日/翌日への移動
+- スマホ表示対応
+
+API 例：
+- `GET /api/journals?q=通信`（一覧・検索）
+- `GET /api/journals/2026-04-07`（詳細）
+
 ## 設定方法
 
 ### ペルソナ設定（config/persona.md）
@@ -120,6 +141,11 @@ OPENROUTER_SITE_NAME=MyApp
 | **src/templates/prompt_templates.py** | config/prompts.md のテンプレート読み込み |
 | **src/builders/prompt_builder.py** | 日別プロンプトの生成 |
 | **src/generators/journal_generator.py** | OpenRouter API 呼び出し・メモリ管理 |
+| **src/viewer/journal_repository.py** | journals/ の日記読み込み・検索・日付移動計算 |
+| **src/viewer/markdown_renderer.py** | Markdown を安全な HTML に変換 |
+| **web_ui.py** | FastAPI ベースの閲覧 UI エントリーポイント |
+| **webapp/templates/index.html** | 閲覧画面テンプレート |
+| **webapp/static/styles.css** | 閲覧画面のスタイル |
 | **config/persona.md** | ペルソナ・期間・固定条件の定義 |
 | **config/prompts.md** | System・共通・日別プロンプトテンプレート |
 | **ARCHITECTURE.md** | 詳細な責務と拡張ガイド |
