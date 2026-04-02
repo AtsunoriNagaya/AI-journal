@@ -89,7 +89,7 @@ class PersonaReplyService:
                 return reply
             except Exception as exc:
                 last_error = exc
-                if not _is_rate_limit_error(exc):
+                if not _is_retryable_error(exc):
                     raise RuntimeError("ペルソナ返信の生成に失敗しました") from exc
                 if retry < config.max_retries:
                     time.sleep(_retry_delay_seconds(exc, retry))
@@ -156,7 +156,7 @@ def _load_openrouter_config(max_output_tokens_default: int) -> _OpenRouterConfig
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
     model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.6-plus-preview:free")
-    max_retries = _read_int_env("AI_JOURNAL_MAX_RETRIES", default=1, minimum=0)
+    max_retries = _read_int_env("AI_JOURNAL_MAX_RETRIES", default=2, minimum=0)
     max_output_tokens = _read_int_env(
         "AI_JOURNAL_MAX_OUTPUT_TOKENS",
         default=max_output_tokens_default,
@@ -232,9 +232,40 @@ def _retry_after_seconds(error: Exception) -> float | None:
     return None
 
 
-def _is_rate_limit_error(error: Exception) -> bool:
+def _error_status_code(error: Exception) -> int | None:
     status_code = getattr(error, "status_code", None)
-    if status_code == 429:
+    if isinstance(status_code, int):
+        return status_code
+
+    response = getattr(error, "response", None)
+    if response is None:
+        return None
+
+    response_status = getattr(response, "status_code", None)
+    if isinstance(response_status, int):
+        return response_status
+    return None
+
+
+def _is_retryable_error(error: Exception) -> bool:
+    status_code = _error_status_code(error)
+    if status_code in {408, 409, 425, 429, 500, 502, 503, 504}:
         return True
+
     message = str(error).lower()
-    return "429" in message and ("rate-limit" in message or "rate limited" in message)
+    retryable_markers = (
+        "rate-limit",
+        "rate limited",
+        "too many requests",
+        "timeout",
+        "timed out",
+        "temporarily unavailable",
+        "service unavailable",
+        "connection reset",
+        "connection aborted",
+        "429",
+        "502",
+        "503",
+        "504",
+    )
+    return any(marker in message for marker in retryable_markers)

@@ -203,8 +203,9 @@ def create_app(
                 body=persona_reply,
             )
         except Exception as error:
+            error_detail = _format_error_chain(error)
             print(
-                f"[WARN] ペルソナ返信の生成に失敗しました: {error}",
+                f"[WARN] ペルソナ返信の生成に失敗しました: {error_detail}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -322,6 +323,20 @@ def _compact_text(raw_value: object, *, max_length: int) -> str:
     if len(normalized) <= max_length:
         return normalized
     return normalized[: max_length - 1].rstrip() + "…"
+
+
+def _format_error_chain(error: Exception) -> str:
+    parts: list[str] = []
+    current: BaseException | None = error
+    visited: set[int] = set()
+
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        message = str(current).strip() or "(no message)"
+        parts.append(f"{type(current).__name__}: {message}")
+        current = current.__cause__ or current.__context__
+
+    return " <- ".join(parts)
 
 
 app = create_app()
