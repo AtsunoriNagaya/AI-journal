@@ -72,6 +72,11 @@
   - 責務: Markdown を HTML に変換し、許可タグのみ残す
   - 依存: markdown, bleach
 
+- **src/viewer/comment_repository.py**
+  - 責務: 日記ごとのコメント保存・読み込み（JSON）
+  - 保存先: `journals/_comments/YYYY-MM-DD.json`（既定）
+  - 依存: なし（ファイル読み込みのみ）
+
 ## スタック
 
 - **Python 3.11+**: タイプセーフな実装、ジェネリクス対応
@@ -101,6 +106,8 @@ stdout + journals/*.md → 日記本文
 [src/viewer/journal_repository.py] + [src/viewer/markdown_renderer.py]
   ↓
 [web_ui.py] → HTML UI / JSON API
+  ↓
+comment_repository 経由でコメント投稿・表示
 ```
 
 ## 日別生成ループ
