@@ -29,7 +29,7 @@ def main() -> None:
     env_path = Path(__file__).parent / ".env"
     load_dotenv(env_path)
 
-    # persona.md を読み込んで入力設定を作成する。
+    # config/persona.md を読み込んで入力設定を作成する。
     persona_path = Path(__file__).parent / "config" / "persona.md"
     try:
         setting = load_setting_from_markdown(str(persona_path))

@@ -1,17 +1,17 @@
 ﻿"""OpenRouter API を使用した日記生成モジュール。
 
 責務:
-  - OpenRouter API 設定の読み込みと検証
-  - LangChain チェーンの構築と実行
-  - モデルフォールバックとレート制限時の再試行ロジック
-  - 日別ループでの会話履歴管理（メモリベース）
-  - stdout への進捗出力
+    - OpenRouter API 設定の読み込みと検証
+    - LangChain チェーンの構築と実行
+    - 日別ループでの会話履歴管理（メモリベース）
+    - stdout への進捗出力
 
 このモジュールは API 通信と生成実行に特化し、設定解析や入力検証は行わない。
 ペルソナ情報や設定は character_setting.py から受け取る。
 """
 
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +30,6 @@ class OpenRouterConfig:
     """OpenRouter API設定のコンテナ"""
     api_key: str
     model: str
-    fallback_models: list[str]
     max_retries: int
     max_output_tokens: int
     site_url: str
@@ -44,20 +43,14 @@ def _load_openrouter_config(max_output_tokens_default: int = 2600) -> OpenRouter
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
     model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.6-plus-preview:free")
-    fallback_models_raw = os.getenv(
-        "OPENROUTER_FALLBACK_MODELS",
-        "openai/gpt-oss-120b:free",
-    )
     max_retries = _read_int_env("AI_JOURNAL_MAX_RETRIES", default=1, minimum=0)
     max_output_tokens = _read_int_env("AI_JOURNAL_MAX_OUTPUT_TOKENS", default=max_output_tokens_default, minimum=1)
     site_url = os.getenv("OPENROUTER_SITE_URL", "")
     site_name = os.getenv("OPENROUTER_SITE_NAME", "")
-    fallback_models = _build_model_candidates(model, fallback_models_raw)
 
     return OpenRouterConfig(
         api_key=api_key,
         model=model,
-        fallback_models=fallback_models,
         max_retries=max_retries,
         max_output_tokens=max_output_tokens,
         site_url=site_url,
@@ -101,7 +94,7 @@ def _generate_single_prompt(prompt: str) -> str:
     except ImportError as exc:
         raise RuntimeError("langchain / langchain-openai is not installed") from exc
 
-    system_text = load_prompt_section("System Prompt", _PROMPTS_PATH)
+    system_text = _load_prompt_context("System Prompt")
     prompt_template = ChatPromptTemplate.from_messages(
         [
             ("system", system_text),
@@ -110,30 +103,24 @@ def _generate_single_prompt(prompt: str) -> str:
     )
 
     last_error: Exception | None = None
-    for model_name in config.fallback_models:
-        for retry in range(config.max_retries + 1):
-            try:
-                llm = _create_llm(config, model_name)
-                # PromptTemplate -> LLM -> 文字列パーサー のチェーンで実行。
-                chain = prompt_template | llm | StrOutputParser()
-                return chain.invoke({"user_prompt": prompt})
-            except Exception as exc:
-                last_error = exc
-                if _is_model_unavailable_error(exc):
-                    break
-                if not _is_rate_limit_error(exc):
-                    raise
-                if retry < config.max_retries:
-                    # 429時はサーバー指定の待機時間を優先し、なければ指数バックオフで再試行する。
-                    time.sleep(_retry_delay_seconds(exc, retry))
-                    continue
-                break
+    for retry in range(config.max_retries + 1):
+        try:
+            llm = _create_llm(config)
+            # PromptTemplate -> LLM -> 文字列パーサー のチェーンで実行。
+            chain = prompt_template | llm | StrOutputParser()
+            return chain.invoke({"user_prompt": prompt})
+        except Exception as exc:
+            last_error = exc
+            if not _is_rate_limit_error(exc):
+                raise
+            if retry < config.max_retries:
+                # 429時はサーバー指定の待機時間を優先し、なければ指数バックオフで再試行する。
+                time.sleep(_retry_delay_seconds(exc, retry))
+                continue
 
-    tried = ", ".join(config.fallback_models)
     raise RuntimeError(
-        f"OpenRouterのレート制限により失敗しました。試行モデル: {tried}. "
-        "無料枠は混雑すると失敗しやすいため、少し時間をおいて再実行するか、"
-        "OPENROUTER_MODEL / OPENROUTER_FALLBACK_MODELS に別の無料モデルを設定してください。"
+        "OpenRouterのレート制限により失敗しました。"
+        "無料枠は混雑すると失敗しやすいため、少し時間をおいて再実行してください。"
     ) from last_error
 
 
@@ -150,7 +137,7 @@ def _generate_with_history(setting: JournalSetting) -> str:
         日別に生成された日記本文を改行で結合したもの。
         出力途中の各日分が リアルタイム で stdout に流される。
     """
-    config = _load_openrouter_config(max_output_tokens_default=1500)
+    config = _load_openrouter_config(max_output_tokens_default=900)
 
     try:
         from langchain_core.chat_history import InMemoryChatMessageHistory
@@ -161,7 +148,7 @@ def _generate_with_history(setting: JournalSetting) -> str:
         raise RuntimeError("langchain / langchain-openai is not installed") from exc
 
     # システムメッセージ + 会話履歴 + ユーザー入力 の3段構成で設定
-    system_text = load_prompt_section("System Prompt", _PROMPTS_PATH)
+    system_text = _load_prompt_context("System Prompt")
     prompt_template = ChatPromptTemplate.from_messages(
         [
             ("system", system_text),
@@ -170,69 +157,55 @@ def _generate_with_history(setting: JournalSetting) -> str:
         ]
     )
 
-    last_error: Exception | None = None
+    llm = _create_llm(config)
+    chain = prompt_template | llm | StrOutputParser()
 
-    # モデル候補を順に試す（フォールバック）
-    for model_name in config.fallback_models:
-        try:
-            llm = _create_llm(config, model_name)
-            chain = prompt_template | llm | StrOutputParser()
-            
-            # セッション-ごとに会話履歴を保持する辞書
-            # （同一セッション内で複数日の履歴が蓄積される）
-            history_store: dict[str, InMemoryChatMessageHistory] = {}
+    # セッション-ごとに会話履歴を保持する辞書
+    history_store: dict[str, InMemoryChatMessageHistory] = {}
 
-            def get_session_history(session_id: str) -> InMemoryChatMessageHistory:
-                """セッション ID に紐づく履歴を取得、未作成なら新規作成。"""
-                if session_id not in history_store:
-                    history_store[session_id] = InMemoryChatMessageHistory()
-                return history_store[session_id]
+    def get_session_history(session_id: str) -> InMemoryChatMessageHistory:
+        """セッション ID に紐づく履歴を取得、未作成なら新規作成。"""
+        if session_id not in history_store:
+            history_store[session_id] = InMemoryChatMessageHistory()
+        return history_store[session_id]
 
-            # メモリを統合したチェーン構築
-            # get_session_history が各呼び出しで前日まで の会話を供給する
-            chain_with_history = RunnableWithMessageHistory(
-                chain,
-                get_session_history,
-                input_messages_key="user_prompt",
-                history_messages_key="history",
-            )
+    # メモリを統合したチェーン構築
+    chain_with_history = RunnableWithMessageHistory(
+        chain,
+        get_session_history,
+        input_messages_key="user_prompt",
+        history_messages_key="history",
+    )
 
-            # 日別ループ：各日ごとにプロンプト → 実行 → 出力
-            diary_parts: list[str] = []
-            for day_number in range(1, setting.days + 1):
-                daily_prompt = build_day_prompt(setting, day_number)
-                day_diary = _invoke_daily_prompt(
-                    chain_with_history,
-                    daily_prompt,
-                    max_retries=config.max_retries,
-                ).strip()
-                diary_parts.append(day_diary)
-                print(day_diary, flush=True)
-                if day_number < setting.days:
-                    print(flush=True)
+    # 日別ループ：各日ごとにプロンプト → 実行 → 出力
+    diary_parts: list[str] = []
+    for day_number in range(1, setting.days + 1):
+        previous_summary = _build_previous_summary(diary_parts)
+        avoid_repetition_hint = _build_avoidance_hint(diary_parts, setting)
+        daily_prompt = build_day_prompt(
+            setting,
+            day_number,
+            previous_summary=previous_summary,
+            avoid_repetition_hint=avoid_repetition_hint,
+        )
+        day_diary = _invoke_daily_prompt(
+            chain_with_history,
+            daily_prompt,
+            max_retries=config.max_retries,
+        ).strip()
+        diary_parts.append(day_diary)
+        print(day_diary, flush=True)
+        if day_number < setting.days:
+            print(flush=True)
 
-            return "\n\n".join(diary_parts)
-
-        except Exception as exc:
-            last_error = exc
-            if _is_model_unavailable_error(exc) or _is_rate_limit_error(exc):
-                continue
-            raise
-
-    tried = ", ".join(config.fallback_models)
-    raise RuntimeError(
-        f"OpenRouterのレート制限またはモデル未提供により失敗しました。試行モデル: {tried}. "
-        "無料枠は混雑すると失敗しやすいため、少し時間をおいて再実行するか、"
-        "OPENROUTER_MODEL / OPENROUTER_FALLBACK_MODELS に別の無料モデルを設定してください。"
-    ) from last_error
+    return "\n\n".join(diary_parts)
 
 
-def _create_llm(config: OpenRouterConfig, model_name: str):
+def _create_llm(config: OpenRouterConfig):
     """OpenRouter 用の LangChain ChatOpenAI インスタンスを生成。
 
     Args:
         config: OpenRouter 設定。
-        model_name: 利用するモデル名（例：qwen/qwen3.6-plus-preview:free）。
 
     Returns:
         構成済みの ChatOpenAI インスタンス。
@@ -247,13 +220,19 @@ def _create_llm(config: OpenRouterConfig, model_name: str):
         headers["X-Title"] = config.site_name
 
     return ChatOpenAI(
-        model=model_name,
+        model=config.model,
         temperature=0.9,
         api_key=config.api_key,
         base_url="https://openrouter.ai/api/v1",
         max_tokens=config.max_output_tokens,
         default_headers=headers if headers else None,
     )
+
+
+def _load_prompt_context(section_name: str) -> str:
+    base_text = load_prompt_section(section_name, _PROMPTS_PATH)
+    common_text = load_prompt_section("Common Guidelines", _PROMPTS_PATH)
+    return f"{base_text}\n\n{common_text}"
 
 
 def _invoke_daily_prompt(chain_with_history, prompt: str, *, max_retries: int) -> str:
@@ -276,6 +255,121 @@ def _invoke_daily_prompt(chain_with_history, prompt: str, *, max_retries: int) -
     raise RuntimeError("日記生成に失敗しました") from last_error
 
 
+def _build_previous_summary(diary_parts: list[str], *, max_items: int = 2) -> str:
+    if not diary_parts:
+        return "- まだ前日までの記録はありません（1日目）。"
+
+    start_index = max(0, len(diary_parts) - max_items)
+    lines: list[str] = []
+    for index in range(start_index, len(diary_parts)):
+        day_number = index + 1
+        body_text = _extract_body_text(diary_parts[index])
+        snippet = body_text[:90].rstrip()
+        if len(body_text) > 90:
+            snippet += "..."
+        lines.append(f"- {day_number}日目: {snippet}")
+    return "\n".join(lines)
+
+
+def _extract_body_text(diary_text: str) -> str:
+    lines = [line.strip() for line in diary_text.splitlines() if line.strip()]
+    if not lines:
+        return "記録なし"
+
+    first_line = lines[0]
+    if re.fullmatch(r"(##\s*)?(\d{2}/\d{2}|\d{4}-\d{2}-\d{2})", first_line):
+        lines = lines[1:]
+
+    body = " ".join(lines).strip()
+    return body if body else "記録なし"
+
+
+def _build_avoidance_hint(
+    diary_parts: list[str],
+    setting: JournalSetting,
+    *,
+    lookback_days: int = 3,
+    max_terms: int = 6,
+) -> str:
+    if len(diary_parts) < 2:
+        return "なし"
+
+    watched_terms = _collect_watch_terms(setting)
+
+    recent_text = " ".join(
+        _extract_body_text(part)
+        for part in diary_parts[-lookback_days:]
+    )
+
+    matched = [term for term in watched_terms if term in recent_text]
+    if not matched:
+        return "なし"
+
+    # 順序を保ったまま重複を取り除く。
+    unique_terms = list(dict.fromkeys(matched))[:max_terms]
+    return "次の語やモチーフの連続使用を避ける: " + "、".join(unique_terms)
+
+
+def _collect_watch_terms(setting: JournalSetting) -> list[str]:
+    source_text = " ".join(
+        [
+            setting.living_area,
+            setting.hobbies,
+            setting.concerns,
+            setting.likely_events,
+            setting.avoid_patterns,
+            setting.growth_direction,
+            " ".join(incident.content for incident in setting.incidents),
+        ]
+    )
+
+    base_terms = _split_candidate_terms(source_text)
+    style_terms = [
+        "少しずつ",
+        "静か",
+        "手応え",
+        "呼吸",
+        "肩の力",
+        "整える",
+    ]
+    merged = base_terms + style_terms
+    return list(dict.fromkeys(merged))
+
+
+def _split_candidate_terms(text: str) -> list[str]:
+    parts = re.split(r"[、。,，\s/・（）()「」『』【】]+", text)
+    stop_words = {
+        "こと",
+        "もの",
+        "ため",
+        "よう",
+        "など",
+        "ある",
+        "いる",
+        "する",
+        "なる",
+        "できる",
+        "状態",
+        "方向",
+        "感じ",
+        "自分",
+        "今日",
+        "明日",
+    }
+
+    terms: list[str] = []
+    for part in parts:
+        token = part.strip()
+        if not token:
+            continue
+        if token in stop_words:
+            continue
+        if len(token) < 2 or len(token) > 18:
+            continue
+        terms.append(token)
+    return terms
+
+
 def _read_int_env(name: str, *, default: int, minimum: int) -> int:
     raw = os.getenv(name)
     if raw is None or raw.strip() == "":
@@ -285,19 +379,6 @@ def _read_int_env(name: str, *, default: int, minimum: int) -> int:
     except ValueError:
         return default
     return max(value, minimum)
-
-
-def _build_model_candidates(primary: str, fallback_models_raw: str | None = None) -> list[str]:
-    """プライマリとフォールバックモデルをマージ"""
-    candidates: list[str] = []
-    for raw_value in [primary, fallback_models_raw or ""]:
-        if not raw_value:
-            continue
-        for model_name in raw_value.split(","):
-            stripped = model_name.strip()
-            if stripped and stripped not in candidates:
-                candidates.append(stripped)
-    return candidates
 
 
 def _retry_delay_seconds(error: Exception, retry: int) -> float:

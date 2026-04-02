@@ -16,7 +16,9 @@ import re
 def load_prompt_section(section_name: str, file_path: str = "prompts.md") -> str:
     # UTF-8 BOM 付きファイルでも先頭見出しを正しく読めるようにする
     text = Path(file_path).read_text(encoding="utf-8-sig")
-    pattern = re.compile(r"^#{1,6}\s+(.+)$")
+    # セクション境界はトップレベル見出し（#）のみ扱う。
+    # これにより各セクション内で ## 以降の小見出しを安全に使える。
+    pattern = re.compile(r"^#\s+(.+)$")
 
     sections: dict[str, list[str]] = {}
     current_heading: str | None = None
