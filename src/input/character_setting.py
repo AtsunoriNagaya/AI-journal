@@ -1,3 +1,13 @@
+"""キャラクター設定の読み込みと検証モジュール。
+
+責務:
+  - persona.md ファイルから日記ペルソナ情報を読み込む
+  - 設定データの解析と検証
+  - JournalSetting データクラスで型安全な表現を提供
+
+このモジュールは入力の責務のみを持ち、生成処理には関わらない。
+"""
+
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path

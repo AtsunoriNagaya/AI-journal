@@ -1,59 +1,169 @@
-生成AIを用いて、1週間分の日記を生成する
+# AI Journal
 
-# 日記内容
-- コロナ禍で外出自粛が続く中、2日目に通信障害がおこる
-- 新卒のエンジニア（開発未経験）
-- 4/1~4/7
-- 一日あたりおおむね400文字（目安350〜450字）
+生成AI（OpenRouter API）を使用して、1週間の一貫性のある日記を自動生成するツール。日別ループとチャット履歴を活用し、各日の内容が矛盾しないようにしています。
 
-# 設定方法
-- ペルソナ設定は `persona.md` を編集して変更する
-- `persona.md` は通常のMarkdown見出しで記述できる
-  - `## 主人公`
-  - `## 状況`
-  - `## 期間` (開始日と日数)
-  - `## イベント` (0件以上)
-- イベントは複数行で記述可能
-  - `2日目に発生` のような行を起点に1イベントとして認識
-  - 続く行はそのイベントの説明として連結
-  - イベント見出し自体を省略した場合は「イベントなし」として扱う
+## クイックスタート
 
+### 必要な環境
+- Python 3.11+
+- uv（パッケージマネージャー）
 
-# プロンプト編集
-- プロンプトは `prompts.md` で編集できる
-- `# System Prompt` はモデルへの共通指示
-- `# User Prompt Template` は日記生成条件テンプレート
-- User Template では以下の変数を使用できる
-  - `{dates}`
-  - `{role}`
-  - `{background}`
-  - `{incidents_text}`
+### セットアップ
 
-# エラー時の挙動
-- 設定ファイル読込や OpenRouter 生成に失敗した場合は、フォールバック生成せずエラーのみ表示して終了する
-- OpenRouterの429レート制限時は、`AI_JOURNAL_MAX_RETRIES` 回だけ再試行し、`OPENROUTER_FALLBACK_MODELS` が設定されていれば順にフォールバックする
+```bash
+# 環境変数の設定
+cp .env.example .env
+# .env にOpenRouter API キーを記入
 
-# OpenRouter設定（.env）
-- `OPENROUTER_API_KEY`: OpenRouterのAPIキー
-- `OPENROUTER_MODEL`: 第一候補のモデル名。無料枠を使う場合は `:free` 付きのモデルを設定する
-- `OPENROUTER_FALLBACK_MODELS`: 代替モデルをカンマ区切りで指定（任意）。こちらも無料モデルを並べる
-- `AI_JOURNAL_MAX_RETRIES`: 429発生時の再試行回数。無料枠では 2〜3 程度が目安
-- `AI_JOURNAL_MAX_OUTPUT_TOKENS`: 生成時の最大出力トークン
+# 依存関係のインストール
+uv sync
 
-無料枠の初期設定例:
+# ペルソナ設定を編集
+# persona.md を編集して、生成対象の人物・期間・イベント情報を記入
 
-- `OPENROUTER_MODEL="qwen/qwen3.6-plus-preview:free"`
-- `OPENROUTER_FALLBACK_MODELS="openai/gpt-oss-120b:free"`
+# 実行
+uv run main.py
+```
 
-# ファイル構成
-- `character_setting.py`: キャラクター設定の読み込みとパース
-- `prompt_templates.py`: `prompts.md` から見出し単位でプロンプト読込
-- `prompt_builder.py`: プロンプト生成
-- `journal_generator.py`: OpenRouter呼び出し
-- `main.py`: 全体の実行フロー
-- `prompts.md`: 編集可能なSystem/Userプロンプト
+### 出力
+stdout に日付見出し付きの日記が1日ずつリアルタイムで出力されます：
 
-# スタック
-- Python
-- LangChain（PromptTemplate + LLM + OutputParser のチェーン構成）
-- OpenRouter API（OpenAI互換エンドポイント）
+```
+04/01
+<1日目の日記（約380〜420字）>
+
+04/02
+<2日目の日記（約380〜420字）>
+
+...
+```
+
+## 設定方法
+
+### ペルソナ設定（persona.md）
+
+```markdown
+## 主人公
+新卒のエンジニア（開発未経験）
+
+## 状況
+コロナ禍で外出自粛が続く
+
+## 期間
+開始日 2026-04-01
+7日間
+
+## イベント
+2日目に発生
+通信障害
+
+7日まで完全になおらず、つながるときとつながらないときがある（不安定）
+```
+
+### プロンプト設定（prompts.md）
+
+- `# System Prompt`: LLM への共通指示（系統的な指示）
+- `# Common Guidelines`: 全日共通のガイドライン
+- `# Daily User Prompt Template`: 日別プロンプトテンプレート
+  - 使用可能な変数: `{date}`, `{day_number}`, `{total_days}`, `{role}`, `{background}`, `{incident_text}`
+
+### 環境変数設定（.env）
+
+```env
+# 必須
+OPENROUTER_API_KEY=your-api-key-here
+
+# 用意推奨
+OPENROUTER_MODEL=qwen/qwen3.6-plus-preview:free
+OPENROUTER_FALLBACK_MODELS=openai/gpt-oss-120b:free
+
+# オプション（デフォルト値あり）
+AI_JOURNAL_MAX_RETRIES=1
+AI_JOURNAL_MAX_OUTPUT_TOKENS=1500
+OPENROUTER_SITE_URL=https://example.com
+OPENROUTER_SITE_NAME=MyApp
+```
+
+## ファイル構成
+
+| ファイル | 責務 |
+|---------|------|
+| **main.py** | エントリーポイント・全体フロー制御 |
+| **character_setting.py** | persona.md の読み込みと検証 |
+| **prompt_templates.py** | prompts.md のテンプレート読み込み |
+| **prompt_builder.py** | 日別プロンプトの生成 |
+| **journal_generator.py** | OpenRouter API 呼び出し・メモリ管理 |
+| **persona.md** | ペルソナ・期間・イベントの定義 |
+| **prompts.md** | System・共通・日別プロンプトテンプレート |
+| **ARCHITECTURE.md** | 詳細な責務と拡張ガイド |
+
+## アーキテクチャ
+
+責務ごとに層を分離しています。詳細は [ARCHITECTURE.md](ARCHITECTURE.md) を参照ください。
+
+```
+入力層 (character_setting)
+   ↓
+テンプレート層 (prompt_templates)
+   ↓
+プロンプト生成層 (prompt_builder)
+   ↓
+生成層 (journal_generator) ← メモリベースの日別ループ
+   ↓
+制御層 (main) ← エラーハンドリング
+   ↓
+stdout → 日記本文
+```
+
+## トラブルシューティング
+
+### API キーエラー
+```
+[ERROR] 設定ファイルの読み込みに失敗しました: OPENROUTER_API_KEY is not set
+```
+→ .env に `OPENROUTER_API_KEY` を追加してください
+
+### モデル利用不可エラー
+```
+[ERROR] 日記の生成に失敗しました: OpenRouter のレート制限またはモデル未提供...
+```
+→ 別のモデルを試すか、`AI_JOURNAL_MAX_RETRIES` を増やしてください
+
+### 日記が短すぎる
+→ prompts.md の `# Daily User Prompt Template` で「おおむね400字」を「おおむね450字」に変更するか、`AI_JOURNAL_MAX_OUTPUT_TOKENS` を上げてください
+
+## 拡張開発ガイド
+
+新しい機能を追加する前に、[ARCHITECTURE.md](ARCHITECTURE.md) の「拡張ポイント」セクションを確認ください。
+
+### よくある拡張例
+
+**新しい入力形式（YAML など）を追加**
+- character_setting.py に新パーサーを追加
+- 出力は `JournalSetting` に統一
+
+**デバッグ出力を追加**
+- main.py に `--debug` フラグを追加し、中間プロンプトを表示
+
+**ローカルモデル（Ollama など）に切り替え**
+- journal_generator.py の `_create_llm()` を修正
+- `ChatOpenAI` の代わりに別の LLMClass を使用
+
+## テスト
+
+```bash
+# 環境のテスト
+uv run -c "from langchain_core.prompts import ChatPromptTemplate; print('OK')"
+
+# 設定ファイルのテスト
+uv run -c "from character_setting import load_setting_from_markdown; setting = load_setting_from_markdown(); print(f'Days: {setting.days}')"
+```
+
+## ライセンス
+
+（プロジェクト依存）
+
+## サポート
+
+- 問題がある場合は GitHub Issues で報告ください
+- 新規参加者向けのドキュメント改善も大歓迎です
