@@ -73,9 +73,14 @@
   - 依存: markdown, bleach
 
 - **src/viewer/comment_repository.py**
-  - 責務: 日記ごとのコメント保存・読み込み（JSON）
-  - 保存先: `journals/_comments/YYYY-MM-DD.json`（既定）
+  - 責務: 日記ごとのコメント保持・読み込み（プロセス内メモリ）
+  - 保存期間: Web UI 起動中のみ（再起動でリセット）
   - 依存: なし（ファイル読み込みのみ）
+
+- **src/viewer/persona_reply_service.py**
+  - 責務: コメント本文に対するペルソナ返信の生成（OpenRouter）
+  - 入力: `config/persona.md` と対象日の日記本文、最近のコメント履歴
+  - アウトプット: ペルソナ返信テキスト
 
 ## スタック
 
@@ -108,6 +113,8 @@ stdout + journals/*.md → 日記本文
 [web_ui.py] → HTML UI / JSON API
   ↓
 comment_repository 経由でコメント投稿・表示
+  ↓
+persona_reply_service 経由でペルソナ返信生成
 ```
 
 ## 日別生成ループ

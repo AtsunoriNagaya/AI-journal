@@ -5,9 +5,12 @@ from __future__ import annotations
 from datetime import date
 import os
 from pathlib import Path
+import sys
+from typing import Protocol
 from urllib.parse import quote_plus, urlencode
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from dotenv import load_dotenv
+from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,6 +20,7 @@ from src.viewer import (
     JournalEntry,
     JournalComment,
     JournalRepository,
+    PersonaReplyService,
     parse_iso_date,
     render_markdown_html,
     resolve_prev_next_dates,
@@ -27,7 +31,21 @@ _PROJECT_ROOT = Path(__file__).parent
 _TEMPLATE_DIR = _PROJECT_ROOT / "webapp" / "templates"
 _STATIC_DIR = _PROJECT_ROOT / "webapp" / "static"
 _DEFAULT_JOURNALS_DIR = _PROJECT_ROOT / "journals"
-_DEFAULT_COMMENTS_DIR = _DEFAULT_JOURNALS_DIR / "_comments"
+_DEFAULT_PERSONA_PATH = _PROJECT_ROOT / "config" / "persona.md"
+
+
+class PersonaReplyGenerator(Protocol):
+    persona_name: str
+
+    def generate_reply(
+        self,
+        *,
+        journal_date: date,
+        journal_text: str,
+        user_comment: str,
+        recent_comments: list[JournalComment],
+    ) -> str:
+        ...
 
 
 def _resolve_journals_dir() -> Path:
@@ -37,10 +55,10 @@ def _resolve_journals_dir() -> Path:
     return Path(raw_path).expanduser()
 
 
-def _resolve_comments_dir() -> Path:
-    raw_path = os.getenv("AI_JOURNAL_COMMENTS_DIR", "").strip()
+def _resolve_persona_path() -> Path:
+    raw_path = os.getenv("AI_JOURNAL_PERSONA_PATH", "").strip()
     if not raw_path:
-        return _DEFAULT_COMMENTS_DIR
+        return _DEFAULT_PERSONA_PATH
     return Path(raw_path).expanduser()
 
 
@@ -56,6 +74,7 @@ def _serialize_comment(comment: JournalComment) -> dict[str, str]:
     return {
         "id": comment.comment_id,
         "author": comment.author,
+        "role": comment.role,
         "body": comment.body,
         "created_at": comment.created_at_iso,
     }
@@ -64,11 +83,17 @@ def _serialize_comment(comment: JournalComment) -> dict[str, str]:
 def create_app(
     *,
     journals_dir: Path | None = None,
-    comments_dir: Path | None = None,
+    persona_reply_service: PersonaReplyGenerator | None = None,
 ) -> FastAPI:
+    # uvicorn 経由で起動した場合でも .env を自動で読む。
+    load_dotenv(_PROJECT_ROOT / ".env")
+
     app = FastAPI(title="AI Journal Viewer", version="0.1.0")
-    app.state.repository = JournalRepository(journals_dir or _resolve_journals_dir())
-    app.state.comment_repository = CommentRepository(comments_dir or _resolve_comments_dir())
+    resolved_journals_dir = journals_dir or _resolve_journals_dir()
+
+    app.state.repository = JournalRepository(resolved_journals_dir)
+    app.state.comment_repository = CommentRepository()
+    app.state.persona_reply_service = persona_reply_service or PersonaReplyService(_resolve_persona_path())
 
     templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
@@ -83,6 +108,7 @@ def create_app(
     ):
         repository: JournalRepository = app.state.repository
         comment_repository: CommentRepository = app.state.comment_repository
+        reply_service: PersonaReplyGenerator = app.state.persona_reply_service
         query = q.strip()
         entries = repository.list_entries(query=query)
 
@@ -116,34 +142,40 @@ def create_app(
                 "comments": comments,
                 "comment_error": comment_error.strip(),
                 "comment_saved": comment_saved == "1",
+                "persona_name": reply_service.persona_name,
             },
         )
 
     @app.post("/comments/{journal_date}")
-    async def add_comment(
-        request: Request,
+    def add_comment(
         journal_date: str,
         q: str = Query(default=""),
+        q_form: str = Form(default=""),
+        author: str = Form(default=""),
+        body: str = Form(default=""),
     ):
         repository: JournalRepository = app.state.repository
         comment_repository: CommentRepository = app.state.comment_repository
+        reply_service: PersonaReplyGenerator = app.state.persona_reply_service
 
         try:
             target_date = parse_iso_date(journal_date)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-        if repository.get_entry(target_date) is None:
+        entry = repository.get_entry(target_date)
+        if entry is None:
             raise HTTPException(status_code=404, detail="指定日の日記が見つかりません")
 
-        form_data = await request.form()
-        form_query = str(form_data.get("q", "")).strip()
-        effective_query = q.strip() if q.strip() else form_query
-        author = str(form_data.get("author", ""))
-        body = str(form_data.get("body", ""))
+        effective_query = q.strip() if q.strip() else q_form.strip()
 
         try:
-            comment_repository.add_comment(target_date=target_date, author=author, body=body)
+            comment_repository.add_comment(
+                target_date=target_date,
+                author=author,
+                role="user",
+                body=body,
+            )
         except ValueError as error:
             destination = _build_home_url(
                 target_date=target_date,
@@ -152,7 +184,35 @@ def create_app(
             )
             return RedirectResponse(url=destination, status_code=303)
 
-        destination = _build_home_url(target_date=target_date, query=effective_query, comment_saved=True)
+        reply_warning = ""
+        try:
+            recent_comments = comment_repository.list_comments(target_date)
+            persona_reply = reply_service.generate_reply(
+                journal_date=target_date,
+                journal_text=entry.markdown_text,
+                user_comment=body,
+                recent_comments=recent_comments,
+            )
+            comment_repository.add_comment(
+                target_date=target_date,
+                author=reply_service.persona_name,
+                role="persona",
+                body=persona_reply,
+            )
+        except Exception as error:
+            print(
+                f"[WARN] ペルソナ返信の生成に失敗しました: {error}",
+                file=sys.stderr,
+                flush=True,
+            )
+            reply_warning = "コメントは保存しましたが、ペルソナ返信の生成に失敗しました。"
+
+        destination = _build_home_url(
+            target_date=target_date,
+            query=effective_query,
+            comment_saved=True,
+            comment_error=reply_warning,
+        )
         return RedirectResponse(url=destination, status_code=303)
 
     @app.get("/api/journals")

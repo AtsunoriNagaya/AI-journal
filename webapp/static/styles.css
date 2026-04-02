@@ -343,6 +343,15 @@ body {
     background: rgba(255, 255, 255, 0.55);
 }
 
+.comment-item.role-user {
+    border-left: 4px solid rgba(15, 118, 110, 0.5);
+}
+
+.comment-item.role-persona {
+    border-left: 4px solid rgba(194, 65, 12, 0.55);
+    background: rgba(255, 247, 237, 0.65);
+}
+
 .comment-meta {
     margin: 0 0 6px;
     color: #0f766e;

@@ -7,17 +7,34 @@ from fastapi.testclient import TestClient
 from web_ui import create_app
 
 
+class _StubPersonaReplyService:
+    persona_name = "23歳の新卒エンジニア"
+
+    def generate_reply(self, **kwargs) -> str:
+        return "コメントありがとう。明日はもう少し肩の力を抜いてやってみるよ。"
+
+
+class _FailingPersonaReplyService:
+    persona_name = "23歳の新卒エンジニア"
+
+    def generate_reply(self, **kwargs) -> str:
+        raise RuntimeError("boom")
+
+
 class WebUiApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temp_dir = TemporaryDirectory()
         journals_dir = Path(self._temp_dir.name)
-        comments_dir = journals_dir / "_comments"
+        self.journals_dir = journals_dir
 
         (journals_dir / "2026-04-05.md").write_text("## 04/05\n今日は静かだった。", encoding="utf-8")
         (journals_dir / "2026-04-06.md").write_text("## 04/06\n通信障害への対応をした。", encoding="utf-8")
         (journals_dir / "2026-04-07.md").write_text("## 04/07\n会議の準備を整えた。", encoding="utf-8")
 
-        app = create_app(journals_dir=journals_dir, comments_dir=comments_dir)
+        app = create_app(
+            journals_dir=journals_dir,
+            persona_reply_service=_StubPersonaReplyService(),
+        )
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
@@ -61,13 +78,17 @@ class WebUiApiTests(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("コメントを保存しました。", page.text)
         self.assertIn("これはコメントです", page.text)
+        self.assertIn("コメントありがとう。明日はもう少し肩の力を抜いてやってみるよ。", page.text)
 
         detail = self.client.get("/api/journals/2026-04-07")
         self.assertEqual(detail.status_code, 200)
         payload = detail.json()
-        self.assertEqual(payload["comment_count"], 1)
+        self.assertEqual(payload["comment_count"], 2)
         self.assertEqual(payload["comments"][0]["author"], "テスト太郎")
+        self.assertEqual(payload["comments"][0]["role"], "user")
         self.assertEqual(payload["comments"][0]["body"], "これはコメントです")
+        self.assertEqual(payload["comments"][1]["author"], "23歳の新卒エンジニア")
+        self.assertEqual(payload["comments"][1]["role"], "persona")
 
     def test_post_empty_comment_returns_error_message(self) -> None:
         response = self.client.post(
@@ -82,6 +103,48 @@ class WebUiApiTests(unittest.TestCase):
         page = self.client.get(location)
         self.assertEqual(page.status_code, 200)
         self.assertIn("コメント本文を入力してください", page.text)
+
+    def test_reply_generation_failure_keeps_user_comment(self) -> None:
+        app = create_app(
+            journals_dir=self.journals_dir,
+            persona_reply_service=_FailingPersonaReplyService(),
+        )
+        client = TestClient(app)
+
+        response = client.post(
+            "/comments/2026-04-07",
+            data={"author": "テスト", "body": "返信どうなる?"},
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 303)
+        location = response.headers["location"]
+
+        page = client.get(location)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("コメントは保存しましたが、ペルソナ返信の生成に失敗しました。", page.text)
+
+        detail = client.get("/api/journals/2026-04-07")
+        payload = detail.json()
+        self.assertEqual(payload["comment_count"], 1)
+        self.assertEqual(payload["comments"][0]["role"], "user")
+
+    def test_comments_reset_after_app_restart(self) -> None:
+        response = self.client.post(
+            "/comments/2026-04-07",
+            data={"author": "A", "body": "テスト"},
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 303)
+
+        app_after_restart = create_app(
+            journals_dir=self.journals_dir,
+            persona_reply_service=_StubPersonaReplyService(),
+        )
+        client_after_restart = TestClient(app_after_restart)
+
+        detail = client_after_restart.get("/api/journals/2026-04-07")
+        payload = detail.json()
+        self.assertEqual(payload["comment_count"], 0)
 
     def test_search_query_filters_results(self) -> None:
         response = self.client.get("/api/journals", params={"q": "通信"})
