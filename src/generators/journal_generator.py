@@ -14,6 +14,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 
 from src.input.character_setting import JournalSetting
@@ -58,13 +59,18 @@ def _load_openrouter_config(max_output_tokens_default: int = 2600) -> OpenRouter
     )
 
 
-def generate_with_openrouter(prompt_or_setting: str | JournalSetting) -> str:
+def generate_with_openrouter(
+    prompt_or_setting: str | JournalSetting,
+    *,
+    output_dir: Path | None = None,
+) -> str:
     """OpenRouter API を利用して日記本文を生成する。
 
     Args:
         prompt_or_setting: 直接のプロンプト文字列または JournalSetting オブジェクト。
             - 文字列の場合：一括生成モード（後方互換性用）
             - JournalSetting の場合：日別ループ + メモリモード（推奨）
+        output_dir: 日別 Markdown 保存先ディレクトリ。None の場合は保存しない。
 
     Returns:
         生成された日記本文（複数日の場合は改行で区切られている）。
@@ -73,7 +79,7 @@ def generate_with_openrouter(prompt_or_setting: str | JournalSetting) -> str:
         RuntimeError: API キー未設定、モデル利用不可、またはレート制限で失敗時。
     """
     if isinstance(prompt_or_setting, JournalSetting):
-        return _generate_with_history(prompt_or_setting)
+        return _generate_with_history(prompt_or_setting, output_dir=output_dir)
     return _generate_single_prompt(prompt_or_setting)
 
 
@@ -124,7 +130,11 @@ def _generate_single_prompt(prompt: str) -> str:
     ) from last_error
 
 
-def _generate_with_history(setting: JournalSetting) -> str:
+def _generate_with_history(
+    setting: JournalSetting,
+    *,
+    output_dir: Path | None = None,
+) -> str:
     """日別ループで前日コンテキストを踏まえた日記を生成。
 
     LangChain の メッセージ履歴機能を使い、各日ごと に前日まで の会話を
@@ -132,6 +142,7 @@ def _generate_with_history(setting: JournalSetting) -> str:
 
     Args:
         setting: 日記生成設定（期間、主人公、背景、イベント等）。
+        output_dir: 日別 Markdown 保存先ディレクトリ。None の場合は保存しない。
 
     Returns:
         日別に生成された日記本文を改行で結合したもの。
@@ -194,6 +205,12 @@ def _generate_with_history(setting: JournalSetting) -> str:
             max_retries=config.max_retries,
         ).strip()
         diary_parts.append(day_diary)
+        _save_day_diary_markdown(
+            output_dir=output_dir,
+            start_date=setting.start_date,
+            day_number=day_number,
+            diary_text=day_diary,
+        )
         print(day_diary, flush=True)
         if day_number < setting.days:
             print(flush=True)
@@ -368,6 +385,25 @@ def _split_candidate_terms(text: str) -> list[str]:
             continue
         terms.append(token)
     return terms
+
+
+def _save_day_diary_markdown(
+    *,
+    output_dir: Path | None,
+    start_date: date,
+    day_number: int,
+    diary_text: str,
+) -> Path | None:
+    if output_dir is None:
+        return None
+    if day_number < 1:
+        raise ValueError("day_number must be 1 or greater")
+
+    target_date = start_date + timedelta(days=day_number - 1)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{target_date.isoformat()}.md"
+    output_path.write_text(diary_text, encoding="utf-8")
+    return output_path
 
 
 def _read_int_env(name: str, *, default: int, minimum: int) -> int:
