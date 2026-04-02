@@ -414,11 +414,3 @@ def _is_rate_limit_error(error: Exception) -> bool:
         return True
     message = str(error).lower()
     return "429" in message and ("rate-limit" in message or "rate limited" in message)
-
-
-def _is_model_unavailable_error(error: Exception) -> bool:
-    status_code = getattr(error, "status_code", None)
-    if status_code == 404:
-        return True
-    message = str(error).lower()
-    return "no endpoints found" in message or ("404" in message and "model" in message)
