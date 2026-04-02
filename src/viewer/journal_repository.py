@@ -41,7 +41,7 @@ class JournalRepository:
         entries: list[JournalEntry] = []
 
         for target_date, file_path in self._iter_journal_files():
-            markdown_text = file_path.read_text(encoding="utf-8-sig").strip()
+            markdown_text = file_path.read_text(encoding="utf-8-sig")
             if normalized_query and normalized_query not in markdown_text.lower():
                 continue
             entries.append(JournalEntry(journal_date=target_date, markdown_text=markdown_text))
@@ -53,7 +53,7 @@ class JournalRepository:
         file_path = self._journals_dir / f"{target_date.isoformat()}.md"
         if not file_path.exists():
             return None
-        markdown_text = file_path.read_text(encoding="utf-8-sig").strip()
+        markdown_text = file_path.read_text(encoding="utf-8-sig")
         return JournalEntry(journal_date=target_date, markdown_text=markdown_text)
 
     def _iter_journal_files(self) -> list[tuple[date, Path]]:
@@ -67,7 +67,11 @@ class JournalRepository:
             match = _FILE_NAME_PATTERN.fullmatch(path.name)
             if match is None:
                 continue
-            files.append((date.fromisoformat(match.group(1)), path))
+            try:
+                journal_date = date.fromisoformat(match.group(1))
+            except ValueError:
+                continue
+            files.append((journal_date, path))
         return files
 
 

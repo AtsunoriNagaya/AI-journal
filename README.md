@@ -65,11 +65,16 @@ uv run uvicorn web_ui:app --reload
 - Markdown の整形表示
 - 本文キーワード検索
 - 前日/翌日への移動
+- 日記ごとのコメント投稿・表示
 - スマホ表示対応
 
 API 例：
 - `GET /api/journals?q=通信`（一覧・検索）
 - `GET /api/journals/2026-04-07`（詳細）
+
+コメントの保存先：
+- 既定では `journals/_comments/YYYY-MM-DD.json`
+- 環境変数 `AI_JOURNAL_COMMENTS_DIR` で変更可能
 
 ## 設定方法
 
@@ -142,6 +147,7 @@ OPENROUTER_SITE_NAME=MyApp
 | **src/builders/prompt_builder.py** | 日別プロンプトの生成 |
 | **src/generators/journal_generator.py** | OpenRouter API 呼び出し・メモリ管理 |
 | **src/viewer/journal_repository.py** | journals/ の日記読み込み・検索・日付移動計算 |
+| **src/viewer/comment_repository.py** | 日記ごとのコメント保存と読み込み |
 | **src/viewer/markdown_renderer.py** | Markdown を安全な HTML に変換 |
 | **web_ui.py** | FastAPI ベースの閲覧 UI エントリーポイント |
 | **webapp/templates/index.html** | 閲覧画面テンプレート |

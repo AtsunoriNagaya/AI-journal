@@ -61,6 +61,31 @@ class JournalRepositoryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_iso_date("2026/04/07")
 
+    def test_invalid_calendar_date_filename_is_skipped(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            journals_dir = Path(temp_dir)
+            (journals_dir / "2026-04-07.md").write_text("有効", encoding="utf-8")
+            (journals_dir / "2026-13-01.md").write_text("無効", encoding="utf-8")
+
+            repo = JournalRepository(journals_dir)
+            entries = repo.list_entries()
+
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].journal_date.isoformat(), "2026-04-07")
+
+    def test_leading_whitespace_is_preserved_for_markdown(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            journals_dir = Path(temp_dir)
+            content = "    code line\n"
+            (journals_dir / "2026-04-07.md").write_text(content, encoding="utf-8")
+
+            repo = JournalRepository(journals_dir)
+            entry = repo.get_entry(date(2026, 4, 7))
+
+            self.assertIsNotNone(entry)
+            assert entry is not None
+            self.assertEqual(entry.markdown_text, content)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI Journal Viewer</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
 </head>
 <body>
     <div class="aura" aria-hidden="true"></div>
@@ -60,6 +60,39 @@
                 <div class="markdown-body">
                     {{ selected_entry_html | safe }}
                 </div>
+
+                <section class="comment-panel">
+                    <h3>コメント</h3>
+
+                    {% if comment_saved %}
+                    <p class="comment-flash success">コメントを保存しました。</p>
+                    {% endif %}
+                    {% if comment_error %}
+                    <p class="comment-flash error">{{ comment_error }}</p>
+                    {% endif %}
+
+                    <form class="comment-form" method="post" action="/comments/{{ selected_entry.journal_date.isoformat() }}">
+                        <input type="hidden" name="q" value="{{ query }}">
+                        <label for="author">名前（任意）</label>
+                        <input id="author" type="text" name="author" maxlength="40" placeholder="匿名">
+
+                        <label for="body">本文</label>
+                        <textarea id="body" name="body" rows="4" maxlength="1000" placeholder="この日の感想やメモを書けます。" required></textarea>
+
+                        <button type="submit">コメントを送信</button>
+                    </form>
+
+                    <ul class="comment-list">
+                        {% for comment in comments %}
+                        <li class="comment-item">
+                            <p class="comment-meta">{{ comment.author }} ・ {{ comment.created_at_label }}</p>
+                            <p class="comment-body">{{ comment.body }}</p>
+                        </li>
+                        {% else %}
+                        <li class="comment-empty">まだコメントはありません。</li>
+                        {% endfor %}
+                    </ul>
+                </section>
                 {% else %}
                 <div class="empty-state">
                     <h2>日記がありません</h2>
