@@ -2,7 +2,7 @@ import sys
 
 from dotenv import load_dotenv
 from character_setting import load_setting_from_markdown
-from journal_generator import generate_with_gemini
+from journal_generator import generate_with_openrouter
 from prompt_builder import build_prompt
 
 
@@ -21,7 +21,7 @@ def main() -> None:
 
     # 生成に失敗した場合は内容を出さずエラーで終了する。
     try:
-        diary = generate_with_gemini(prompt)
+        diary = generate_with_openrouter(prompt)
     except Exception as error:
         print(f"[ERROR] 日記の生成に失敗しました: {error}")
         sys.exit(1)
