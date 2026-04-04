@@ -10,14 +10,14 @@ from web_ui import create_app
 
 
 class _StubPersonaReplyService:
-    persona_name = "23歳の新卒エンジニア"
+    persona_name = "テスト主人公"
 
     def generate_reply(self, **kwargs) -> str:
         return "コメントありがとう。明日はもう少し肩の力を抜いてやってみるよ。"
 
 
 class _FailingPersonaReplyService:
-    persona_name = "23歳の新卒エンジニア"
+    persona_name = "テスト主人公"
 
     def generate_reply(self, **kwargs) -> str:
         raise RuntimeError("boom")
@@ -30,7 +30,7 @@ class WebUiApiTests(unittest.TestCase):
         self.journals_dir = journals_dir
 
         (journals_dir / "2026-04-05.md").write_text("## 04/05\n今日は静かだった。", encoding="utf-8")
-        (journals_dir / "2026-04-06.md").write_text("## 04/06\n通信障害への対応をした。", encoding="utf-8")
+        (journals_dir / "2026-04-06.md").write_text("## 04/06\n予定の見直しをした。", encoding="utf-8")
         (journals_dir / "2026-04-07.md").write_text("## 04/07\n会議の準備を整えた。", encoding="utf-8")
 
         app = create_app(
@@ -89,13 +89,13 @@ class WebUiApiTests(unittest.TestCase):
         self.assertEqual(payload["comments"][0]["author"], "テスト太郎")
         self.assertEqual(payload["comments"][0]["role"], "user")
         self.assertEqual(payload["comments"][0]["body"], "これはコメントです")
-        self.assertEqual(payload["comments"][1]["author"], "23歳の新卒エンジニア")
+        self.assertEqual(payload["comments"][1]["author"], "テスト主人公")
         self.assertEqual(payload["comments"][1]["role"], "persona")
 
     def test_post_comment_preserves_search_query_in_redirect(self) -> None:
         response = self.client.post(
             "/comments/2026-04-07",
-            data={"author": "テスト", "body": "検索付きコメント", "q": "通信"},
+            data={"author": "テスト", "body": "検索付きコメント", "q": "予定"},
             follow_redirects=False,
         )
         self.assertEqual(response.status_code, 303)
@@ -103,7 +103,7 @@ class WebUiApiTests(unittest.TestCase):
         location = response.headers["location"]
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
-        self.assertEqual(params.get("q"), ["通信"])
+        self.assertEqual(params.get("q"), ["予定"])
 
     def test_post_empty_comment_returns_error_message(self) -> None:
         response = self.client.post(
@@ -184,7 +184,7 @@ class WebUiApiTests(unittest.TestCase):
         self.assertEqual(payload["comment_count"], 0)
 
     def test_search_query_filters_results(self) -> None:
-        response = self.client.get("/api/journals", params={"q": "通信"})
+        response = self.client.get("/api/journals", params={"q": "予定"})
         self.assertEqual(response.status_code, 200)
 
         payload = response.json()

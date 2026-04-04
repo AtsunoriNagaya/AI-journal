@@ -30,11 +30,11 @@ class JournalRepositoryTests(unittest.TestCase):
     def test_list_entries_filters_by_keyword(self) -> None:
         with TemporaryDirectory() as temp_dir:
             journals_dir = Path(temp_dir)
-            (journals_dir / "2026-04-05.md").write_text("通信障害が起きた", encoding="utf-8")
+            (journals_dir / "2026-04-05.md").write_text("予定変更が起きた", encoding="utf-8")
             (journals_dir / "2026-04-06.md").write_text("静かな散歩をした", encoding="utf-8")
 
             repo = JournalRepository(journals_dir)
-            entries = repo.list_entries(query="通信")
+            entries = repo.list_entries(query="予定")
 
             self.assertEqual(len(entries), 1)
             self.assertEqual(entries[0].journal_date.isoformat(), "2026-04-05")

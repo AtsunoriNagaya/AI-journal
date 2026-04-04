@@ -79,7 +79,8 @@
 
 - **src/viewer/persona_reply_service.py**
   - 責務: コメント本文に対するペルソナ返信の生成（OpenRouter）
-  - 入力: `config/persona.md` と対象日の日記本文、最近のコメント履歴
+  - 入力: `config/persona.md`、`config/prompts.md`（返信用セクション）、対象日の日記本文、最近のコメント履歴
+  - 依存: `src/templates/prompt_templates.py`（返信プロンプト読込）
   - アウトプット: ペルソナ返信テキスト
 
 ## スタック
@@ -115,6 +116,8 @@ stdout + journals/*.md → 日記本文
 comment_repository 経由でコメント投稿・表示
   ↓
 persona_reply_service 経由でペルソナ返信生成
+  ↓
+[src/templates/prompt_templates.py] ← config/prompts.md（返信用セクション）
 ```
 
 ## 日別生成ループ
@@ -151,7 +154,8 @@ Day 7:
 - **実装場所**: `web_ui.py` のコメント投稿エンドポイント + `src/viewer/comment_repository.py` + `src/viewer/persona_reply_service.py`
 - **現在の仕様**:
   - コメント履歴はプロセス内メモリ保持（Web UI 再起動でリセット）
-  - 返信生成は OpenRouter API を利用し、失敗時はユーザーコメントのみ保存
+  - 返信生成は OpenRouter API を利用し、返信プロンプトは `config/prompts.md` のセクションから読み込む
+  - 返信生成失敗時はユーザーコメントのみ保存
 - **今後の拡張候補**:
   - コメント履歴の永続化（SQLite など）
   - 返信失敗時の再実行キューや管理画面の追加
@@ -208,7 +212,7 @@ def test_build_day_prompt():
 ## 開発時の注意
 
 - **ブレーキングチェンジ**: `JournalSetting` の構造変更は他すべてに影響するため、慎重に
-- **テンプレート管理**: `config/prompts.md` のセクション名は `src/templates/prompt_templates.py` で参照される
+- **テンプレート管理**: `config/prompts.md` のセクション名（`src/builders/prompt_builder.py` と `src/viewer/persona_reply_service.py` が利用）は `src/templates/prompt_templates.py` 経由で参照される
 - **環境変数**: `.env.example` はプロジェクトルートを正とする
 
 ## まとめ

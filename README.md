@@ -85,6 +85,17 @@ API 例：
 
 ### ペルソナ設定（config/persona.md）
 
+注意:
+- 見出し名は固定です（後方互換の別名見出しは廃止）。
+- 必須見出し: `主人公` / `背景` / `期間` / `1週間のテーマ` / `平日傾向` / `休日傾向` / `文体` / `想定読者` / `現実味の制約` / `補足設定`
+- `補足設定` は次の6項目すべてが必須です。
+   - よく使う行動範囲
+   - 興味・趣味
+   - 不安や悩み
+   - 日常で起こりやすいこと
+   - 避けたい展開
+   - 1週間を通して見せたい変化
+
 ```markdown
 ## 主人公
 新卒のエンジニア（開発未経験）
@@ -125,6 +136,13 @@ API 例：
 - `# Common Guidelines`: 全日共通のガイドライン
 - `# Daily User Prompt Template`: 日別プロンプトテンプレート
    - 使用可能な変数: `{persona_block}`, `{date}`, `{day_number}`, `{total_days}`, `{day_mode}`, `{fixed_event_today}`, `{previous_summary}`, `{structure_hint}`, `{uniqueness_hint}`, `{avoid_repetition_hint}`
+- `# Daily Prompt Default Previous Summary`: 1日目の既定要約文
+- `# Daily Prompt Default Avoid Repetition Hint`: 重複回避ヒント未指定時の既定文
+- `# Weekday Structure Hints` / `# Weekend Structure Hints`: 日別の構成ヒント候補
+- `# Uniqueness Hint Template`: 固有性ヒント文のテンプレート
+- `# Persona Reply System Prompt`: コメント返信の system プロンプト
+- `# Persona Reply User Prompt Template`: コメント返信の user プロンプト
+- `# Persona Reply Empty History`: 会話履歴が空のときの表示文
 
 ### 環境変数設定（.env）
 
@@ -137,6 +155,10 @@ API 例：
 OPENROUTER_API_KEY=your-api-key-here
 OPENROUTER_MODEL=qwen/qwen3.6-plus:free
 ```
+
+補足:
+- コメント返信の再試行回数は `AI_PERSONA_MAX_RETRIES` のみ参照します。
+- `AI_JOURNAL_MAX_RETRIES` へのフォールバックは廃止されています。
 
 ## ファイル構成
 

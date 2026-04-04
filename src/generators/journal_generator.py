@@ -66,16 +66,14 @@ def _load_openrouter_config(max_output_tokens_default: int = 2600) -> OpenRouter
 
 
 def generate_with_openrouter(
-    prompt_or_setting: str | JournalSetting,
+    setting: JournalSetting,
     *,
     output_dir: Path | None = None,
 ) -> str:
     """OpenRouter API を利用して日記本文を生成する。
 
     Args:
-        prompt_or_setting: 直接のプロンプト文字列または JournalSetting オブジェクト。
-            - 文字列の場合：一括生成モード（後方互換性用）
-            - JournalSetting の場合：日別ループ + メモリモード（推奨）
+        setting: 日記生成設定（期間、主人公、背景、イベント等）。
         output_dir: 日別 Markdown 保存先ディレクトリ。None の場合は保存しない。
 
     Returns:
@@ -84,56 +82,7 @@ def generate_with_openrouter(
     Raises:
         RuntimeError: API キー未設定、モデル利用不可、またはレート制限で失敗時。
     """
-    if isinstance(prompt_or_setting, JournalSetting):
-        return _generate_with_history(prompt_or_setting, output_dir=output_dir)
-    return _generate_single_prompt(prompt_or_setting)
-
-
-def _generate_single_prompt(prompt: str) -> str:
-    """1つのプロンプトを一括で生成（後方互換モード）。
-
-    Args:
-        prompt: 生成対象のプロンプト文字列。
-
-    Returns:
-        LLM の出力結果。
-    """
-    config = _load_openrouter_config(max_output_tokens_default=2600)
-
-    try:
-        from langchain_core.output_parsers import StrOutputParser
-        from langchain_core.prompts import ChatPromptTemplate
-    except ImportError as exc:
-        raise RuntimeError("langchain / langchain-openai is not installed") from exc
-
-    system_text = _load_prompt_context("System Prompt")
-    prompt_template = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_text),
-            ("human", "{user_prompt}"),
-        ]
-    )
-
-    last_error: Exception | None = None
-    for retry in range(config.max_retries + 1):
-        try:
-            llm = _create_llm(config)
-            # PromptTemplate -> LLM -> 文字列パーサー のチェーンで実行。
-            chain = prompt_template | llm | StrOutputParser()
-            return chain.invoke({"user_prompt": prompt})
-        except Exception as exc:
-            last_error = exc
-            if not _is_rate_limit_error(exc):
-                raise
-            if retry < config.max_retries:
-                # 429時はサーバー指定の待機時間を優先し、なければ指数バックオフで再試行する。
-                time.sleep(_retry_delay_seconds(exc, retry))
-                continue
-
-    raise RuntimeError(
-        "OpenRouterのレート制限により失敗しました。"
-        "無料枠は混雑すると失敗しやすいため、少し時間をおいて再実行してください。"
-    ) from last_error
+    return _generate_with_history(setting, output_dir=output_dir)
 
 
 def _generate_with_history(

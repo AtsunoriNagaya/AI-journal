@@ -4,13 +4,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 import os
 from pathlib import Path
 import time
 
 from src.input.character_setting import JournalSetting, load_setting_from_markdown
+from src.templates.prompt_templates import load_prompt_section
 from src.viewer.comment_repository import JournalComment
 from src.utils.env_utils import read_int_env
+
+
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+_PROMPTS_PATH = str(_PROJECT_ROOT / "config" / "prompts.md")
+_PERSONA_REPLY_SYSTEM_PROMPT_SECTION = "Persona Reply System Prompt"
+_PERSONA_REPLY_USER_PROMPT_TEMPLATE_SECTION = "Persona Reply User Prompt Template"
+_PERSONA_REPLY_EMPTY_HISTORY_SECTION = "Persona Reply Empty History"
 
 
 @dataclass(frozen=True)
@@ -113,20 +122,12 @@ class PersonaReplyService:
 
 def _build_system_prompt(setting: JournalSetting) -> str:
     """返信スタイルを固定する system prompt を構築する。"""
-    return (
-        "あなたは以下の人物として返信してください。\n"
-        f"- 主人公: {setting.role}\n"
-        f"- 背景: {setting.background}\n"
-        f"- 文体: {setting.tone_keywords}\n"
-        f"- 現実味の制約: {setting.realism_constraints}\n"
-        "\n"
-        "返信ルール:\n"
-        "- 日本語で、親しみやすく自然に返信する\n"
-        "- 1〜3文、全体で120文字前後に収める\n"
-        "- 説教調・断定調を避ける\n"
-        "- 相手のコメント内容に具体的に触れる\n"
-        "- 不明点がある場合は1つだけ短く質問して終える\n"
-        "- 返信本文のみを出力する"
+    template = _load_prompt_section(_PERSONA_REPLY_SYSTEM_PROMPT_SECTION)
+    return template.format(
+        role=setting.role,
+        background=setting.background,
+        tone_keywords=setting.tone_keywords,
+        realism_constraints=setting.realism_constraints,
     )
 
 
@@ -144,20 +145,20 @@ def _build_user_prompt(
         speaker = "ペルソナ" if item.role == "persona" else "ユーザー"
         history_lines.append(f"- {speaker}: {item.body}")
 
-    history_block = "\n".join(history_lines) if history_lines else "- まだ会話履歴はありません"
+    history_block = "\n".join(history_lines) if history_lines else _load_prompt_section(_PERSONA_REPLY_EMPTY_HISTORY_SECTION)
 
-    return (
-        f"日付: {journal_date.isoformat()}\n"
-        "\n"
-        "この日の日記本文:\n"
-        f"{journal_text}\n"
-        "\n"
-        "これまでの会話:\n"
-        f"{history_block}\n"
-        "\n"
-        "今回のユーザーコメント:\n"
-        f"{user_comment}"
+    template = _load_prompt_section(_PERSONA_REPLY_USER_PROMPT_TEMPLATE_SECTION)
+    return template.format(
+        journal_date=journal_date.isoformat(),
+        journal_text=journal_text,
+        history_block=history_block,
+        user_comment=user_comment,
     )
+
+
+@lru_cache(maxsize=None)
+def _load_prompt_section(section_name: str) -> str:
+    return load_prompt_section(section_name, _PROMPTS_PATH)
 
 
 def _load_openrouter_config(max_output_tokens_default: int) -> _OpenRouterConfig:
@@ -167,8 +168,7 @@ def _load_openrouter_config(max_output_tokens_default: int) -> _OpenRouterConfig
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
     model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.6-plus:free")
-    # 新しい専用変数を優先し、未設定時のみ既存変数を後方互換として参照する。
-    max_retries = _read_retry_count_env(default=2)
+    max_retries = read_int_env("AI_PERSONA_MAX_RETRIES", default=2, minimum=0)
     max_output_tokens = read_int_env(
         "AI_JOURNAL_MAX_OUTPUT_TOKENS",
         default=max_output_tokens_default,
@@ -205,14 +205,6 @@ def _create_llm(config: _OpenRouterConfig):
         max_tokens=config.max_output_tokens,
         default_headers=headers if headers else None,
     )
-
-
-def _read_retry_count_env(*, default: int) -> int:
-    """返信用の再試行回数を読み込む（専用変数を優先）。"""
-    persona_raw = os.getenv("AI_PERSONA_MAX_RETRIES")
-    if persona_raw is not None and persona_raw.strip() != "":
-        return read_int_env("AI_PERSONA_MAX_RETRIES", default=default, minimum=0)
-    return read_int_env("AI_JOURNAL_MAX_RETRIES", default=default, minimum=0)
 
 
 def _retry_delay_seconds(error: Exception, retry: int) -> float:

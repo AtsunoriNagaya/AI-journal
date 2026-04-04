@@ -10,7 +10,9 @@
 """
 
 from datetime import timedelta
+from functools import lru_cache
 from pathlib import Path
+import re
 
 from src.input.character_setting import Incident, JournalSetting
 from src.templates.prompt_templates import load_prompt_section
@@ -19,6 +21,11 @@ from src.utils.text_utils import compact_text
 
 # prompts.md のパス（プロジェクトルートの config フォルダーを想定）
 _PROMPTS_PATH = str(Path(__file__).parent.parent.parent / "config" / "prompts.md")
+_WEEKDAY_STRUCTURE_HINTS_SECTION = "Weekday Structure Hints"
+_WEEKEND_STRUCTURE_HINTS_SECTION = "Weekend Structure Hints"
+_UNIQUENESS_HINT_TEMPLATE_SECTION = "Uniqueness Hint Template"
+_DAILY_PREVIOUS_SUMMARY_DEFAULT_SECTION = "Daily Prompt Default Previous Summary"
+_DAILY_AVOID_REPETITION_DEFAULT_SECTION = "Daily Prompt Default Avoid Repetition Hint"
 
 
 def build_dates(setting: JournalSetting) -> list[str]:
@@ -59,8 +66,8 @@ def build_day_prompt(
     date_text = target_date.strftime("%m/%d")
     day_mode = "平日" if target_date.weekday() < 5 else "休日"
     fixed_event_today = _build_incident_text(setting.incidents, day_number)
-    summary_text = previous_summary.strip() or "- まだ前日までの記録はありません（1日目）。"
-    avoid_hint = avoid_repetition_hint.strip() or "なし"
+    summary_text = previous_summary.strip() or _load_prompt_text(_DAILY_PREVIOUS_SUMMARY_DEFAULT_SECTION)
+    avoid_hint = avoid_repetition_hint.strip() or _load_prompt_text(_DAILY_AVOID_REPETITION_DEFAULT_SECTION)
     structure_hint = _pick_structure_hint(day_number, day_mode)
     uniqueness_hint = _build_uniqueness_hint(setting)
     template = load_prompt_section("Daily User Prompt Template", _PROMPTS_PATH)
@@ -111,17 +118,8 @@ def _compact_text(text: str) -> str:
 
 def _pick_structure_hint(day_number: int, day_mode: str) -> str:
     """日数と平日/休日に応じて構成ヒントをローテーション選択する。"""
-    weekday_patterns = [
-        "導入はその日の小さな違和感や引っかかりから始める",
-        "導入は短い会話、通知、音など外部のきっかけから始める",
-        "導入は身体感覚や生活リズムの乱れから始め、気分の変化を軸にする",
-        "導入は小さな失敗や迷いから始め、対処の過程を中心に描く",
-    ]
-    weekend_patterns = [
-        "導入は部屋の様子や家事など生活の手触りから始める",
-        "導入は外出先または身近な風景の短い観察から始める",
-        "導入は休息や趣味の場面から始め、次の日への小さな持ち越しで閉じる",
-    ]
+    weekday_patterns = _load_list_prompt(_WEEKDAY_STRUCTURE_HINTS_SECTION)
+    weekend_patterns = _load_list_prompt(_WEEKEND_STRUCTURE_HINTS_SECTION)
 
     # 同じ型の導入が連続しすぎないよう、日数で循環させる。
     patterns = weekend_patterns if day_mode == "休日" else weekday_patterns
@@ -130,12 +128,34 @@ def _pick_structure_hint(day_number: int, day_mode: str) -> str:
 
 def _build_uniqueness_hint(setting: JournalSetting) -> str:
     """日ごとの差異を出すための補助ヒント文を作る。"""
-    return (
-        "補足設定のうち、行動範囲・趣味・不安や悩み・変化方向から1つ選び、"
-        "その日の一場面に自然ににじませる。"
-        f"候補: 行動範囲（{_compact_text(setting.living_area)}） / 趣味（{_compact_text(setting.hobbies)}） / "
-        f"不安（{_compact_text(setting.concerns)}） / 変化方向（{_compact_text(setting.growth_direction)}）"
+    template = _load_prompt_text(_UNIQUENESS_HINT_TEMPLATE_SECTION)
+    return template.format(
+        living_area=_compact_text(setting.living_area),
+        hobbies=_compact_text(setting.hobbies),
+        concerns=_compact_text(setting.concerns),
+        growth_direction=_compact_text(setting.growth_direction),
     )
+
+
+@lru_cache(maxsize=None)
+def _load_prompt_text(section_name: str) -> str:
+    return load_prompt_section(section_name, _PROMPTS_PATH)
+
+
+@lru_cache(maxsize=None)
+def _load_list_prompt(section_name: str) -> tuple[str, ...]:
+    raw_text = _load_prompt_text(section_name)
+    items: list[str] = []
+    for raw_line in raw_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        items.append(re.sub(r"^[-*]\s*", "", line).strip())
+
+    parsed_items = tuple(item for item in items if item)
+    if not parsed_items:
+        raise ValueError(f"Prompt section has no list items: {section_name}")
+    return parsed_items
 
 
 def _build_incident_text(incidents: tuple[Incident, ...], day_number: int) -> str:

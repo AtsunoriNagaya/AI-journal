@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from threading import Lock
-from typing import Any
 from uuid import uuid4
 
 
@@ -40,8 +39,7 @@ class JournalComment:
 class CommentRepository:
     """コメントの読み書きを行う（プロセス内メモリ保持）。"""
 
-    def __init__(self, comments_dir: Any | None = None) -> None:
-        # comments_dir は後方互換のため受け取るが使用しない。
+    def __init__(self) -> None:
         self._lock = Lock()
         self._comments_by_date: dict[date, list[JournalComment]] = {}
 

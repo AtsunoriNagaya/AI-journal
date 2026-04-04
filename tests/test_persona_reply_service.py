@@ -57,29 +57,54 @@ class PersonaReplyServiceTests(unittest.TestCase):
                         "# 日記ペルソナ",
                         "",
                         "## 主人公",
-                        "23歳の新卒エンジニア",
-                        "地方の国立大出身",
+                        "テスト用の主人公",
+                        "追加プロフィール",
                         "",
                         "## 背景",
-                        "2026年春。新人研修と実務立ち上がりが同時進行。",
+                        "あるプロジェクトの立ち上げ期間。",
                         "",
                         "## 期間",
                         "開始日 2026-04-01",
                         "7日間",
+                        "",
+                        "## 1週間のテーマ",
+                        "一週間を通して新しい環境に慣れる",
+                        "",
+                        "## 平日傾向",
+                        "主要な作業と連絡を中心に過ごす",
+                        "",
+                        "## 休日傾向",
+                        "休息と生活の整え直しを中心に過ごす",
+                        "",
+                        "## 文体",
+                        "自然体で読みやすい",
+                        "",
+                        "## 想定読者",
+                        "同じような課題を抱える読者",
+                        "",
+                        "## 現実味の制約",
+                        "現実的な範囲の出来事に限定する",
+                        "",
+                        "## 補足設定",
+                        "- よく使う行動範囲: 自宅と作業場所",
+                        "- 興味・趣味: 読書",
+                        "- 不安や悩み: 進め方の迷い",
+                        "- 日常で起こりやすいこと: 連絡と確認作業",
+                        "- 避けたい展開: 不自然な偶然",
+                        "- 1週間を通して見せたい変化: 迷いから落ち着きへ",
                     ]
                 ),
                 encoding="utf-8",
             )
 
             service = PersonaReplyService(persona_path)
-            self.assertEqual(service.persona_name, "23歳の新卒エンジニア")
+            self.assertEqual(service.persona_name, "テスト用の主人公")
 
     def test_load_config_prefers_persona_retry_env(self) -> None:
         with patch.dict(
             "os.environ",
             {
                 "OPENROUTER_API_KEY": "dummy",
-                "AI_JOURNAL_MAX_RETRIES": "7",
                 "AI_PERSONA_MAX_RETRIES": "3",
             },
             clear=True,
@@ -88,7 +113,7 @@ class PersonaReplyServiceTests(unittest.TestCase):
 
         self.assertEqual(config.max_retries, 3)
 
-    def test_load_config_falls_back_to_journal_retry_env(self) -> None:
+    def test_load_config_uses_default_when_persona_retry_env_missing(self) -> None:
         with patch.dict(
             "os.environ",
             {
@@ -99,7 +124,7 @@ class PersonaReplyServiceTests(unittest.TestCase):
         ):
             config = _load_openrouter_config(max_output_tokens_default=320)
 
-        self.assertEqual(config.max_retries, 4)
+        self.assertEqual(config.max_retries, 2)
 
 
 if __name__ == "__main__":
