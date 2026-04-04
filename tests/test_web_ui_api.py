@@ -1,6 +1,8 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from urllib.parse import parse_qs, urlparse
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -90,6 +92,19 @@ class WebUiApiTests(unittest.TestCase):
         self.assertEqual(payload["comments"][1]["author"], "23歳の新卒エンジニア")
         self.assertEqual(payload["comments"][1]["role"], "persona")
 
+    def test_post_comment_preserves_search_query_in_redirect(self) -> None:
+        response = self.client.post(
+            "/comments/2026-04-07",
+            data={"author": "テスト", "body": "検索付きコメント", "q": "通信"},
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 303)
+
+        location = response.headers["location"]
+        parsed = urlparse(location)
+        params = parse_qs(parsed.query)
+        self.assertEqual(params.get("q"), ["通信"])
+
     def test_post_empty_comment_returns_error_message(self) -> None:
         response = self.client.post(
             "/comments/2026-04-07",
@@ -103,6 +118,28 @@ class WebUiApiTests(unittest.TestCase):
         page = self.client.get(location)
         self.assertEqual(page.status_code, 200)
         self.assertIn("コメント本文を入力してください", page.text)
+
+    def test_invalid_comment_skips_reply_history_lookup(self) -> None:
+        app = create_app(
+            journals_dir=self.journals_dir,
+            persona_reply_service=_StubPersonaReplyService(),
+        )
+        client = TestClient(app)
+        comment_repository = app.state.comment_repository
+
+        with patch.object(
+            comment_repository,
+            "list_comments",
+            wraps=comment_repository.list_comments,
+        ) as mocked_list_comments:
+            response = client.post(
+                "/comments/2026-04-07",
+                data={"author": "", "body": "   "},
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(mocked_list_comments.call_count, 0)
 
     def test_reply_generation_failure_keeps_user_comment(self) -> None:
         app = create_app(

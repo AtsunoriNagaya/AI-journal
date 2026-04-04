@@ -171,7 +171,6 @@ def create_app(
             raise HTTPException(status_code=404, detail="指定日の日記が見つかりません")
 
         effective_query = q.strip() if q.strip() else q_form.strip()
-        recent_comments_for_reply = comment_repository.list_comments(target_date)
 
         try:
             saved_user_comment = comment_repository.add_comment(
@@ -187,6 +186,12 @@ def create_app(
                 comment_error=str(error),
             )
             return RedirectResponse(url=destination, status_code=303)
+
+        recent_comments_for_reply = [
+            comment
+            for comment in comment_repository.list_comments(target_date)
+            if comment.comment_id != saved_user_comment.comment_id
+        ]
 
         reply_warning = ""
         try:
@@ -303,8 +308,6 @@ def _build_home_url(
 
 def _build_persona_view(reply_service: PersonaReplyGenerator) -> dict[str, str]:
     name = _safe_persona_name(reply_service)
-    if not name:
-        name = "ペルソナ"
 
     background = _safe_persona_field(
         reply_service,
