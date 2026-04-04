@@ -21,6 +21,7 @@ from pathlib import Path
 from src.input.character_setting import JournalSetting
 from src.builders.prompt_builder import build_day_prompt
 from src.templates.prompt_templates import load_prompt_section
+from src.utils.env_utils import read_int_env
 
 
 # prompts.md のパス（プロジェクトルートの config フォルダーを想定）
@@ -45,8 +46,12 @@ def _load_openrouter_config(max_output_tokens_default: int = 2600) -> OpenRouter
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
     model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.6-plus:free")
-    max_retries = _read_int_env("AI_JOURNAL_MAX_RETRIES", default=1, minimum=0)
-    max_output_tokens = _read_int_env("AI_JOURNAL_MAX_OUTPUT_TOKENS", default=max_output_tokens_default, minimum=1)
+    max_retries = read_int_env("AI_JOURNAL_MAX_RETRIES", default=1, minimum=0)
+    max_output_tokens = read_int_env(
+        "AI_JOURNAL_MAX_OUTPUT_TOKENS",
+        default=max_output_tokens_default,
+        minimum=1,
+    )
     site_url = os.getenv("OPENROUTER_SITE_URL", "")
     site_name = os.getenv("OPENROUTER_SITE_NAME", "")
 
@@ -255,12 +260,15 @@ def _create_llm(config: OpenRouterConfig):
 
 
 def _load_prompt_context(section_name: str) -> str:
+    """指定セクションと共通ガイドラインを連結して返す。"""
+    # どのモードでも Common Guidelines を同時適用する方針。
     base_text = load_prompt_section(section_name, _PROMPTS_PATH)
     common_text = load_prompt_section("Common Guidelines", _PROMPTS_PATH)
     return f"{base_text}\n\n{common_text}"
 
 
 def _invoke_daily_prompt(chain_with_history, prompt: str, *, max_retries: int) -> str:
+    """1日分のプロンプト実行を行い、必要なら再試行する。"""
     last_error: Exception | None = None
     for retry in range(max_retries + 1):
         try:
@@ -273,6 +281,7 @@ def _invoke_daily_prompt(chain_with_history, prompt: str, *, max_retries: int) -
             if not _is_rate_limit_error(exc):
                 raise
             if retry < max_retries:
+                # レート制限時のみ待機してリトライする。
                 time.sleep(_retry_delay_seconds(exc, retry))
                 continue
             raise
@@ -281,6 +290,7 @@ def _invoke_daily_prompt(chain_with_history, prompt: str, *, max_retries: int) -
 
 
 def _build_previous_summary(diary_parts: list[str], *, max_items: int = 2) -> str:
+    """直近の日記を短い要約箇条書きへ変換する。"""
     if not diary_parts:
         return "- まだ前日までの記録はありません（1日目）。"
 
@@ -297,6 +307,7 @@ def _build_previous_summary(diary_parts: list[str], *, max_items: int = 2) -> st
 
 
 def _extract_body_text(diary_text: str) -> str:
+    """見出しを除いた本文だけを抽出して 1 行へ整形する。"""
     lines = [line.strip() for line in diary_text.splitlines() if line.strip()]
     if not lines:
         return "記録なし"
@@ -316,6 +327,7 @@ def _build_avoidance_hint(
     lookback_days: int = 3,
     max_terms: int = 6,
 ) -> str:
+    """直近数日の反復語を検出し、重複回避ヒントを作る。"""
     if len(diary_parts) < 2:
         return "なし"
 
@@ -336,6 +348,7 @@ def _build_avoidance_hint(
 
 
 def _collect_watch_terms(setting: JournalSetting) -> list[str]:
+    """重複監視の対象語を設定値から収集する。"""
     source_text = " ".join(
         [
             setting.living_area,
@@ -362,6 +375,7 @@ def _collect_watch_terms(setting: JournalSetting) -> list[str]:
 
 
 def _split_candidate_terms(text: str) -> list[str]:
+    """監視候補の語を簡易分割し、ノイズ語を除外する。"""
     parts = re.split(r"[、。,，\s/・（）()「」『』【】]+", text)
     stop_words = {
         "こと",
@@ -391,6 +405,7 @@ def _split_candidate_terms(text: str) -> list[str]:
             continue
         if len(token) < 2 or len(token) > 18:
             continue
+        # 長すぎる句や 1 文字語は一致判定のノイズになりやすいので除外する。
         terms.append(token)
     return terms
 
@@ -402,6 +417,7 @@ def _save_day_diary_markdown(
     day_number: int,
     diary_text: str,
 ) -> Path | None:
+    """1日分の日記を YYYY-MM-DD.md として保存する。"""
     if output_dir is None:
         return None
     if day_number < 1:
@@ -414,18 +430,8 @@ def _save_day_diary_markdown(
     return output_path
 
 
-def _read_int_env(name: str, *, default: int, minimum: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        return default
-    return max(value, minimum)
-
-
 def _retry_delay_seconds(error: Exception, retry: int) -> float:
+    """次回リトライまでの待機秒数を計算する。"""
     retry_after = _retry_after_seconds(error)
     if retry_after is not None:
         return min(retry_after, 30.0)
@@ -433,6 +439,7 @@ def _retry_delay_seconds(error: Exception, retry: int) -> float:
 
 
 def _retry_after_seconds(error: Exception) -> float | None:
+    """レスポンスヘッダーから retry-after 秒数を取り出す。"""
     response = getattr(error, "response", None)
     if response is None:
         return None
@@ -453,6 +460,7 @@ def _retry_after_seconds(error: Exception) -> float | None:
 
 
 def _is_rate_limit_error(error: Exception) -> bool:
+    """エラーがレート制限由来かどうかを判定する。"""
     status_code = getattr(error, "status_code", None)
     if status_code == 429:
         return True

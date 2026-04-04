@@ -25,6 +25,7 @@ from src.viewer import (
     render_markdown_html,
     resolve_prev_next_dates,
 )
+from src.utils.text_utils import compact_text
 
 
 _PROJECT_ROOT = Path(__file__).parent
@@ -35,6 +36,8 @@ _DEFAULT_PERSONA_PATH = _PROJECT_ROOT / "config" / "persona.md"
 
 
 class PersonaReplyGenerator(Protocol):
+    """ペルソナ返信サービスの最小インターフェース。"""
+
     persona_name: str
 
     def generate_reply(
@@ -49,6 +52,7 @@ class PersonaReplyGenerator(Protocol):
 
 
 def _resolve_journals_dir() -> Path:
+    """日記ディレクトリを環境変数優先で決定する。"""
     raw_path = os.getenv("AI_JOURNAL_JOURNALS_DIR", "").strip()
     if not raw_path:
         return _DEFAULT_JOURNALS_DIR
@@ -56,6 +60,7 @@ def _resolve_journals_dir() -> Path:
 
 
 def _resolve_persona_path() -> Path:
+    """ペルソナ設定ファイルのパスを環境変数優先で決定する。"""
     raw_path = os.getenv("AI_JOURNAL_PERSONA_PATH", "").strip()
     if not raw_path:
         return _DEFAULT_PERSONA_PATH
@@ -63,6 +68,7 @@ def _resolve_persona_path() -> Path:
 
 
 def _serialize_entry(entry: JournalEntry) -> dict[str, object]:
+    """JournalEntry を API 応答用の辞書に変換する。"""
     return {
         "date": entry.journal_date.isoformat(),
         "excerpt": entry.excerpt,
@@ -71,6 +77,7 @@ def _serialize_entry(entry: JournalEntry) -> dict[str, object]:
 
 
 def _serialize_comment(comment: JournalComment) -> dict[str, str]:
+    """JournalComment を API 応答用の辞書に変換する。"""
     return {
         "id": comment.comment_id,
         "author": comment.author,
@@ -106,13 +113,17 @@ def create_app(
         comment_error: str = Query(default=""),
         comment_saved: str = Query(default=""),
     ):
+        # app.state に依存オブジェクトを置くことで、テスト時に差し替えやすくしている。
         repository: JournalRepository = app.state.repository
         comment_repository: CommentRepository = app.state.comment_repository
         reply_service: PersonaReplyGenerator = app.state.persona_reply_service
         query = q.strip()
+
+        # 左側一覧に表示する日記一覧（検索語があれば本文検索を適用）。
         entries = repository.list_entries(query=query)
         persona_view = _build_persona_view(reply_service)
 
+        # date 指定が無ければ先頭（最新）を開く。
         selected_date = _resolve_selected_date(entries, date_value)
         selected_entry = _pick_selected_entry(entries, selected_date)
 
@@ -121,6 +132,7 @@ def create_app(
 
         previous_date, next_date = resolve_prev_next_dates(entries, selected_date)
 
+        # 選択日がある場合のみ本文HTMLとコメント一覧を準備する。
         selected_html = ""
         comments: list[JournalComment] = []
         if selected_entry is not None:
@@ -153,6 +165,7 @@ def create_app(
     def add_comment(
         journal_date: str,
         q: str = Query(default=""),
+        # コメントフォームの hidden input(name="q") から検索語を引き継ぐ。
         q_form: str = Form(default="", alias="q"),
         author: str = Form(default=""),
         body: str = Form(default=""),
@@ -161,17 +174,24 @@ def create_app(
         comment_repository: CommentRepository = app.state.comment_repository
         reply_service: PersonaReplyGenerator = app.state.persona_reply_service
 
+        # URL パラメーターの日付は文字列で来るため、最初に厳密な日付へ変換する。
         try:
             target_date = parse_iso_date(journal_date)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+        # 日記が存在しない日付にはコメントできないようにする。
         entry = repository.get_entry(target_date)
         if entry is None:
             raise HTTPException(status_code=404, detail="指定日の日記が見つかりません")
 
-        effective_query = q.strip() if q.strip() else q_form.strip()
+        # URL で明示された検索語を優先し、無ければフォーム hidden 値を使う。
+        effective_query = _resolve_effective_query(
+            query=q,
+            query_from_form=q_form,
+        )
 
+        # 入力値バリデーション（空コメントなど）は repository 側に委譲する。
         try:
             saved_user_comment = comment_repository.add_comment(
                 target_date=target_date,
@@ -180,49 +200,29 @@ def create_app(
                 body=body,
             )
         except ValueError as error:
-            destination = _build_home_url(
+            # 入力エラー時は同じページへ戻し、エラーメッセージだけを表示する。
+            return _redirect_to_home(
                 target_date=target_date,
                 query=effective_query,
                 comment_error=str(error),
             )
-            return RedirectResponse(url=destination, status_code=303)
 
-        recent_comments_for_reply = [
-            comment
-            for comment in comment_repository.list_comments(target_date)
-            if comment.comment_id != saved_user_comment.comment_id
-        ]
+        # ユーザーコメント保存後に、ペルソナ返信の生成・保存を試みる。
+        reply_warning = _save_persona_reply_or_warning(
+            reply_service=reply_service,
+            comment_repository=comment_repository,
+            target_date=target_date,
+            journal_text=entry.markdown_text,
+            saved_user_comment=saved_user_comment,
+        )
 
-        reply_warning = ""
-        try:
-            persona_reply = reply_service.generate_reply(
-                journal_date=target_date,
-                journal_text=entry.markdown_text,
-                user_comment=saved_user_comment.body,
-                recent_comments=recent_comments_for_reply,
-            )
-            comment_repository.add_comment(
-                target_date=target_date,
-                author=_safe_persona_name(reply_service),
-                role="persona",
-                body=persona_reply,
-            )
-        except Exception as error:
-            error_detail = _format_error_chain(error)
-            print(
-                f"[WARN] ペルソナ返信の生成に失敗しました: {error_detail}",
-                file=sys.stderr,
-                flush=True,
-            )
-            reply_warning = "コメントは保存しましたが、ペルソナ返信の生成に失敗しました。"
-
-        destination = _build_home_url(
+        # 投稿完了後は PRG パターンで GET に戻す（リロード時の二重投稿防止）。
+        return _redirect_to_home(
             target_date=target_date,
             query=effective_query,
             comment_saved=True,
             comment_error=reply_warning,
         )
-        return RedirectResponse(url=destination, status_code=303)
 
     @app.get("/api/journals")
     def list_journals(q: str = Query(default="")) -> dict[str, object]:
@@ -263,10 +263,80 @@ def create_app(
     return app
 
 
+def _resolve_effective_query(*, query: str, query_from_form: str) -> str:
+    """URL query を優先し、空ならフォーム値を採用する。"""
+    # URL の query はユーザーが直接変更できるため、hidden より優先する。
+    normalized_query = query.strip()
+    if normalized_query:
+        return normalized_query
+    return query_from_form.strip()
+
+
+def _redirect_to_home(
+    *,
+    target_date: date,
+    query: str,
+    comment_error: str = "",
+    comment_saved: bool = False,
+) -> RedirectResponse:
+    """ホーム画面への 303 リダイレクトを生成する。"""
+    destination = _build_home_url(
+        target_date=target_date,
+        query=query,
+        comment_error=comment_error,
+        comment_saved=comment_saved,
+    )
+    return RedirectResponse(url=destination, status_code=303)
+
+
+def _save_persona_reply_or_warning(
+    *,
+    reply_service: PersonaReplyGenerator,
+    comment_repository: CommentRepository,
+    target_date: date,
+    journal_text: str,
+    saved_user_comment: JournalComment,
+) -> str:
+    """ペルソナ返信を保存し、失敗時は警告文言を返す。"""
+    # 直前に保存したユーザーコメントは「今回の入力」として別枠で渡すため、
+    # 履歴重複を避ける目的で除外している。
+    recent_comments_for_reply = [
+        comment
+        for comment in comment_repository.list_comments(target_date)
+        if comment.comment_id != saved_user_comment.comment_id
+    ]
+
+    try:
+        persona_reply = reply_service.generate_reply(
+            journal_date=target_date,
+            journal_text=journal_text,
+            user_comment=saved_user_comment.body,
+            recent_comments=recent_comments_for_reply,
+        )
+        comment_repository.add_comment(
+            target_date=target_date,
+            author=_safe_persona_name(reply_service),
+            role="persona",
+            body=persona_reply,
+        )
+        return ""
+    except Exception as error:
+        # 返信生成に失敗しても、ユーザーコメント自体は保存済みなので処理継続する。
+        error_detail = _format_error_chain(error)
+        print(
+            f"[WARN] ペルソナ返信の生成に失敗しました: {error_detail}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return "コメントは保存しましたが、ペルソナ返信の生成に失敗しました。"
+
+
 def _resolve_selected_date(entries: list[JournalEntry], raw_date: str | None) -> date | None:
+    """表示対象の日付を解決する。"""
     if raw_date is None:
         if not entries:
             return None
+        # date 指定が無ければ、最新日記（降順の先頭）を表示する。
         return entries[0].journal_date
 
     try:
@@ -279,6 +349,7 @@ def _pick_selected_entry(
     entries: list[JournalEntry],
     selected_date: date | None,
 ) -> JournalEntry | None:
+    """一覧から対象日の日記を 1 件取り出す。"""
     if selected_date is None:
         return None
 
@@ -295,6 +366,7 @@ def _build_home_url(
     comment_error: str = "",
     comment_saved: bool = False,
 ) -> str:
+    """ホーム画面URLをクエリ付きで組み立てる。"""
     params: dict[str, str] = {"date": target_date.isoformat()}
     normalized_query = query.strip()
     if normalized_query:
@@ -307,6 +379,7 @@ def _build_home_url(
 
 
 def _build_persona_view(reply_service: PersonaReplyGenerator) -> dict[str, str]:
+    """UI表示用のペルソナ情報を安全に整形して返す。"""
     name = _safe_persona_name(reply_service)
 
     background = _safe_persona_field(
@@ -327,6 +400,7 @@ def _build_persona_view(reply_service: PersonaReplyGenerator) -> dict[str, str]:
 
 
 def _safe_persona_name(reply_service: PersonaReplyGenerator) -> str:
+    """表示用ペルソナ名を取得する。失敗時は既定名を返す。"""
     name = _safe_persona_field(
         reply_service,
         field_name="persona_name",
@@ -341,6 +415,7 @@ def _safe_persona_field(
     field_name: str,
     max_length: int,
 ) -> str:
+    """返信サービスから属性を安全に取得し、表示向けに短く整形する。"""
     try:
         value = getattr(reply_service, field_name, "")
     except Exception as error:
@@ -355,16 +430,18 @@ def _safe_persona_field(
 
 
 def _compact_text(raw_value: object, *, max_length: int) -> str:
+    """表示用テキストの空白を正規化し、最大文字数までに切り詰める。"""
     if not isinstance(raw_value, str):
         return ""
 
-    normalized = " ".join(part.strip() for part in raw_value.replace("\r\n", "\n").splitlines() if part.strip())
+    normalized = compact_text(raw_value)
     if len(normalized) <= max_length:
         return normalized
     return normalized[: max_length - 1].rstrip() + "…"
 
 
 def _format_error_chain(error: Exception) -> str:
+    """例外チェーンを 1 行文字列に連結する。"""
     parts: list[str] = []
     current: BaseException | None = error
     visited: set[int] = set()
@@ -373,6 +450,8 @@ def _format_error_chain(error: Exception) -> str:
         visited.add(id(current))
         message = str(current).strip() or "(no message)"
         parts.append(f"{type(current).__name__}: {message}")
+
+        # 明示的な cause があればそれを優先し、無ければ context をたどる。
         if current.__cause__ is not None:
             current = current.__cause__
         elif getattr(current, "__suppress_context__", False):

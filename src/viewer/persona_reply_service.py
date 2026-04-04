@@ -10,10 +10,13 @@ import time
 
 from src.input.character_setting import JournalSetting, load_setting_from_markdown
 from src.viewer.comment_repository import JournalComment
+from src.utils.env_utils import read_int_env
 
 
 @dataclass(frozen=True)
 class _OpenRouterConfig:
+    """返信生成で使う OpenRouter 設定。"""
+
     api_key: str
     model: str
     max_retries: int
@@ -54,6 +57,7 @@ class PersonaReplyService:
         user_comment: str,
         recent_comments: list[JournalComment],
     ) -> str:
+        # 返信は短文が前提なので、日記本文より低めの token 既定値を使う。
         config = _load_openrouter_config(max_output_tokens_default=320)
 
         try:
@@ -63,6 +67,7 @@ class PersonaReplyService:
             raise RuntimeError("langchain / langchain-openai is not installed") from exc
 
         setting = self._setting
+        # system で人物像を固定し、human で当日の文脈を渡す。
         prompt_template = ChatPromptTemplate.from_messages(
             [
                 ("system", _build_system_prompt(setting)),
@@ -92,6 +97,7 @@ class PersonaReplyService:
                 if not _is_retryable_error(exc):
                     raise RuntimeError("ペルソナ返信の生成に失敗しました") from exc
                 if retry < config.max_retries:
+                    # retry-after ヘッダーがあれば尊重し、なければ指数バックオフ。
                     time.sleep(_retry_delay_seconds(exc, retry))
                     continue
 
@@ -99,12 +105,14 @@ class PersonaReplyService:
 
     @property
     def _setting(self) -> JournalSetting:
+        # persona.md の再読込を避けるため、初回だけ読み込んでキャッシュする。
         if self._setting_cache is None:
             self._setting_cache = load_setting_from_markdown(str(self._persona_path))
         return self._setting_cache
 
 
 def _build_system_prompt(setting: JournalSetting) -> str:
+    """返信スタイルを固定する system prompt を構築する。"""
     return (
         "あなたは以下の人物として返信してください。\n"
         f"- 主人公: {setting.role}\n"
@@ -129,8 +137,10 @@ def _build_user_prompt(
     user_comment: str,
     recent_comments: list[JournalComment],
 ) -> str:
+    """当日の文脈と会話履歴を含む user prompt を構築する。"""
     history_lines: list[str] = []
     for item in recent_comments[-6:]:
+        # 役割を明示して渡すことで、モデルが口調を維持しやすくなる。
         speaker = "ペルソナ" if item.role == "persona" else "ユーザー"
         history_lines.append(f"- {speaker}: {item.body}")
 
@@ -151,6 +161,7 @@ def _build_user_prompt(
 
 
 def _load_openrouter_config(max_output_tokens_default: int) -> _OpenRouterConfig:
+    """環境変数から返信生成向け OpenRouter 設定を読み込む。"""
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
@@ -158,7 +169,7 @@ def _load_openrouter_config(max_output_tokens_default: int) -> _OpenRouterConfig
     model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.6-plus:free")
     # 新しい専用変数を優先し、未設定時のみ既存変数を後方互換として参照する。
     max_retries = _read_retry_count_env(default=2)
-    max_output_tokens = _read_int_env(
+    max_output_tokens = read_int_env(
         "AI_JOURNAL_MAX_OUTPUT_TOKENS",
         default=max_output_tokens_default,
         minimum=1,
@@ -177,6 +188,7 @@ def _load_openrouter_config(max_output_tokens_default: int) -> _OpenRouterConfig
 
 
 def _create_llm(config: _OpenRouterConfig):
+    """OpenRouter 接続設定済みの ChatOpenAI を返す。"""
     from langchain_openai import ChatOpenAI
 
     headers: dict[str, str] = {}
@@ -195,25 +207,16 @@ def _create_llm(config: _OpenRouterConfig):
     )
 
 
-def _read_int_env(name: str, *, default: int, minimum: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        return default
-    return max(value, minimum)
-
-
 def _read_retry_count_env(*, default: int) -> int:
+    """返信用の再試行回数を読み込む（専用変数を優先）。"""
     persona_raw = os.getenv("AI_PERSONA_MAX_RETRIES")
     if persona_raw is not None and persona_raw.strip() != "":
-        return _read_int_env("AI_PERSONA_MAX_RETRIES", default=default, minimum=0)
-    return _read_int_env("AI_JOURNAL_MAX_RETRIES", default=default, minimum=0)
+        return read_int_env("AI_PERSONA_MAX_RETRIES", default=default, minimum=0)
+    return read_int_env("AI_JOURNAL_MAX_RETRIES", default=default, minimum=0)
 
 
 def _retry_delay_seconds(error: Exception, retry: int) -> float:
+    """再試行までの待機秒数を計算する。"""
     retry_after = _retry_after_seconds(error)
     if retry_after is not None:
         return min(retry_after, 30.0)
@@ -221,6 +224,7 @@ def _retry_delay_seconds(error: Exception, retry: int) -> float:
 
 
 def _retry_after_seconds(error: Exception) -> float | None:
+    """HTTP レスポンスの retry-after ヘッダーを秒で取得する。"""
     response = getattr(error, "response", None)
     if response is None:
         return None
@@ -241,6 +245,7 @@ def _retry_after_seconds(error: Exception) -> float | None:
 
 
 def _error_status_code(error: Exception) -> int | None:
+    """例外オブジェクトから HTTP ステータスコードを抽出する。"""
     status_code = getattr(error, "status_code", None)
     if isinstance(status_code, int):
         return status_code
@@ -256,6 +261,7 @@ def _error_status_code(error: Exception) -> int | None:
 
 
 def _is_retryable_error(error: Exception) -> bool:
+    """再試行対象の一時的エラーかどうかを判定する。"""
     status_code = _error_status_code(error)
     if status_code in {408, 409, 425, 429, 500, 502, 503, 504}:
         return True

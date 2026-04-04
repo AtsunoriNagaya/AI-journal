@@ -128,23 +128,14 @@ API 例：
 
 ### 環境変数設定（.env）
 
+環境変数の一覧と説明は [.env.example](.env.example) を正本にしています。
+値を追加・変更するときは、`.env` だけでなく `.env.example` も更新してください。
+
+最小構成の例:
+
 ```env
-# 必須
 OPENROUTER_API_KEY=your-api-key-here
-
-# 用意推奨
 OPENROUTER_MODEL=qwen/qwen3.6-plus:free
-
-# オプション（デフォルト値あり）
-# 日記生成（src/generators/journal_generator.py）
-AI_JOURNAL_MAX_RETRIES=1
-
-# コメント時のペルソナ返信（src/viewer/persona_reply_service.py）
-AI_PERSONA_MAX_RETRIES=2
-
-AI_JOURNAL_MAX_OUTPUT_TOKENS=900
-OPENROUTER_SITE_URL=https://example.com
-OPENROUTER_SITE_NAME=MyApp
 ```
 
 ## ファイル構成
@@ -156,6 +147,8 @@ OPENROUTER_SITE_NAME=MyApp
 | **src/templates/prompt_templates.py** | config/prompts.md のテンプレート読み込み |
 | **src/builders/prompt_builder.py** | 日別プロンプトの生成 |
 | **src/generators/journal_generator.py** | OpenRouter API 呼び出し・メモリ管理 |
+| **src/utils/env_utils.py** | 環境変数の共通パーサー |
+| **src/utils/text_utils.py** | 文字列の空白正規化ヘルパー |
 | **src/viewer/journal_repository.py** | journals/ の日記読み込み・検索・日付移動計算 |
 | **src/viewer/comment_repository.py** | 日記ごとのコメントをメモリ保持（再起動でリセット） |
 | **src/viewer/persona_reply_service.py** | コメントへのペルソナ返信を生成 |

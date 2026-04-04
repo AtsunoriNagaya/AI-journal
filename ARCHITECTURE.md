@@ -147,11 +147,14 @@ Day 7:
 - **追加場所**: `src/generators/journal_generator.py` の最終出力処理
 - **注意**: メモリ層（LangChain）はテキストを扱うため、構造化データ化する場合は日別生成後に変換する
 
-### コメント返信機能（将来拡張）
-- **追加場所**: `web_ui.py` の API 層にコメント投稿エンドポイントを追加
-- **注意**:
-  - 初版では閲覧専用を維持し、生成フロー（`main.py` / `journal_generator.py`）とは分離する
-  - コメント履歴は Markdown 追記ではなく、別ストレージ（JSON or SQLite）を検討する
+### コメント返信機能（実装済み）
+- **実装場所**: `web_ui.py` のコメント投稿エンドポイント + `src/viewer/comment_repository.py` + `src/viewer/persona_reply_service.py`
+- **現在の仕様**:
+  - コメント履歴はプロセス内メモリ保持（Web UI 再起動でリセット）
+  - 返信生成は OpenRouter API を利用し、失敗時はユーザーコメントのみ保存
+- **今後の拡張候補**:
+  - コメント履歴の永続化（SQLite など）
+  - 返信失敗時の再実行キューや管理画面の追加
 
 ### 新しい入力形式（e.g., YAML）
 - **追加場所**: `src/input/character_setting.py` に新パーサーを追加

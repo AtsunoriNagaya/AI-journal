@@ -11,10 +11,10 @@
 
 from datetime import timedelta
 from pathlib import Path
-import re
 
 from src.input.character_setting import Incident, JournalSetting
 from src.templates.prompt_templates import load_prompt_section
+from src.utils.text_utils import compact_text
 
 
 # prompts.md のパス（プロジェクトルートの config フォルダーを想定）
@@ -79,30 +79,38 @@ def build_day_prompt(
 
 
 def _build_persona_block(setting: JournalSetting) -> str:
-    lines = [
-        f"- 主人公: {_compact_text(setting.role)}",
-        f"- 背景: {_compact_text(setting.background)}",
-        f"- 1週間のテーマ: {_compact_text(setting.weekly_theme)}",
-        f"- 平日傾向: {_compact_text(setting.weekday_style)}",
-        f"- 休日傾向: {_compact_text(setting.weekend_style)}",
-        f"- 文体: {_compact_text(setting.tone_keywords)}",
-        f"- 想定読者: {_compact_text(setting.target_reader)}",
-        f"- 現実味の制約: {_compact_text(setting.realism_constraints)}",
-        f"- よく使う行動範囲: {_compact_text(setting.living_area)}",
-        f"- 興味・趣味: {_compact_text(setting.hobbies)}",
-        f"- 不安や悩み: {_compact_text(setting.concerns)}",
-        f"- 日常で起こりやすいこと: {_compact_text(setting.likely_events)}",
-        f"- 避けたい展開: {_compact_text(setting.avoid_patterns)}",
-        f"- 1週間を通して見せたい変化: {_compact_text(setting.growth_direction)}",
-    ]
-    return "\n".join(lines)
+    """JournalSetting の主要項目を箇条書きブロックへ変換する。"""
+    # label と値をペアで管理しておくと、項目追加時に 1 行で追記できる。
+    fields = (
+        ("主人公", setting.role),
+        ("背景", setting.background),
+        ("1週間のテーマ", setting.weekly_theme),
+        ("平日傾向", setting.weekday_style),
+        ("休日傾向", setting.weekend_style),
+        ("文体", setting.tone_keywords),
+        ("想定読者", setting.target_reader),
+        ("現実味の制約", setting.realism_constraints),
+        ("よく使う行動範囲", setting.living_area),
+        ("興味・趣味", setting.hobbies),
+        ("不安や悩み", setting.concerns),
+        ("日常で起こりやすいこと", setting.likely_events),
+        ("避けたい展開", setting.avoid_patterns),
+        ("1週間を通して見せたい変化", setting.growth_direction),
+    )
+    return "\n".join(
+        # テンプレート埋め込み前に空白を正規化し、不要な改行差分を防ぐ。
+        f"- {label}: {_compact_text(value)}"
+        for label, value in fields
+    )
 
 
 def _compact_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+    """テンプレート向けに空白を 1 つへ畳み込む。"""
+    return compact_text(text)
 
 
 def _pick_structure_hint(day_number: int, day_mode: str) -> str:
+    """日数と平日/休日に応じて構成ヒントをローテーション選択する。"""
     weekday_patterns = [
         "導入はその日の小さな違和感や引っかかりから始める",
         "導入は短い会話、通知、音など外部のきっかけから始める",
@@ -115,11 +123,13 @@ def _pick_structure_hint(day_number: int, day_mode: str) -> str:
         "導入は休息や趣味の場面から始め、次の日への小さな持ち越しで閉じる",
     ]
 
+    # 同じ型の導入が連続しすぎないよう、日数で循環させる。
     patterns = weekend_patterns if day_mode == "休日" else weekday_patterns
     return patterns[(day_number - 1) % len(patterns)]
 
 
 def _build_uniqueness_hint(setting: JournalSetting) -> str:
+    """日ごとの差異を出すための補助ヒント文を作る。"""
     return (
         "補足設定のうち、行動範囲・趣味・不安や悩み・変化方向から1つ選び、"
         "その日の一場面に自然ににじませる。"
