@@ -75,7 +75,7 @@
 - **src/viewer/comment_repository.py**
   - 責務: 日記ごとのコメント保持・読み込み（プロセス内メモリ）
   - 保存期間: Web UI 起動中のみ（再起動でリセット）
-  - 依存: なし（ファイル読み込みのみ）
+  - 依存: なし
 
 - **src/viewer/persona_reply_service.py**
   - 責務: コメント本文に対するペルソナ返信の生成（OpenRouter）

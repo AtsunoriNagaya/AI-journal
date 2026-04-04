@@ -133,10 +133,15 @@ API 例：
 OPENROUTER_API_KEY=your-api-key-here
 
 # 用意推奨
-OPENROUTER_MODEL=qwen/qwen3.6-plus-preview:free
+OPENROUTER_MODEL=qwen/qwen3.6-plus:free
 
 # オプション（デフォルト値あり）
+# 日記生成（src/generators/journal_generator.py）
 AI_JOURNAL_MAX_RETRIES=1
+
+# コメント時のペルソナ返信（src/viewer/persona_reply_service.py）
+AI_PERSONA_MAX_RETRIES=2
+
 AI_JOURNAL_MAX_OUTPUT_TOKENS=900
 OPENROUTER_SITE_URL=https://example.com
 OPENROUTER_SITE_NAME=MyApp

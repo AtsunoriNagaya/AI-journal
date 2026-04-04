@@ -153,7 +153,7 @@ def create_app(
     def add_comment(
         journal_date: str,
         q: str = Query(default=""),
-        q_form: str = Form(default=""),
+        q_form: str = Form(default="", alias="q"),
         author: str = Form(default=""),
         body: str = Form(default=""),
     ):
@@ -171,9 +171,10 @@ def create_app(
             raise HTTPException(status_code=404, detail="指定日の日記が見つかりません")
 
         effective_query = q.strip() if q.strip() else q_form.strip()
+        recent_comments_for_reply = comment_repository.list_comments(target_date)
 
         try:
-            comment_repository.add_comment(
+            saved_user_comment = comment_repository.add_comment(
                 target_date=target_date,
                 author=author,
                 role="user",
@@ -189,16 +190,15 @@ def create_app(
 
         reply_warning = ""
         try:
-            recent_comments = comment_repository.list_comments(target_date)
             persona_reply = reply_service.generate_reply(
                 journal_date=target_date,
                 journal_text=entry.markdown_text,
-                user_comment=body,
-                recent_comments=recent_comments,
+                user_comment=saved_user_comment.body,
+                recent_comments=recent_comments_for_reply,
             )
             comment_repository.add_comment(
                 target_date=target_date,
-                author=reply_service.persona_name,
+                author=_safe_persona_name(reply_service),
                 role="persona",
                 body=persona_reply,
             )
@@ -302,17 +302,53 @@ def _build_home_url(
 
 
 def _build_persona_view(reply_service: PersonaReplyGenerator) -> dict[str, str]:
-    name = _compact_text(getattr(reply_service, "persona_name", "ペルソナ"), max_length=38)
+    name = _safe_persona_name(reply_service)
     if not name:
         name = "ペルソナ"
 
-    background = _compact_text(getattr(reply_service, "persona_background", ""), max_length=110)
-    tone_keywords = _compact_text(getattr(reply_service, "persona_tone_keywords", ""), max_length=56)
+    background = _safe_persona_field(
+        reply_service,
+        field_name="persona_background",
+        max_length=110,
+    )
+    tone_keywords = _safe_persona_field(
+        reply_service,
+        field_name="persona_tone_keywords",
+        max_length=56,
+    )
     return {
         "name": name,
         "background": background,
         "tone_keywords": tone_keywords,
     }
+
+
+def _safe_persona_name(reply_service: PersonaReplyGenerator) -> str:
+    name = _safe_persona_field(
+        reply_service,
+        field_name="persona_name",
+        max_length=38,
+    )
+    return name or "ペルソナ"
+
+
+def _safe_persona_field(
+    reply_service: PersonaReplyGenerator,
+    *,
+    field_name: str,
+    max_length: int,
+) -> str:
+    try:
+        value = getattr(reply_service, field_name, "")
+    except Exception as error:
+        print(
+            f"[WARN] ペルソナ情報の取得に失敗しました({field_name}): {_format_error_chain(error)}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return ""
+
+    return _compact_text(value, max_length=max_length)
 
 
 def _compact_text(raw_value: object, *, max_length: int) -> str:
@@ -334,7 +370,12 @@ def _format_error_chain(error: Exception) -> str:
         visited.add(id(current))
         message = str(current).strip() or "(no message)"
         parts.append(f"{type(current).__name__}: {message}")
-        current = current.__cause__ or current.__context__
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif getattr(current, "__suppress_context__", False):
+            current = None
+        else:
+            current = current.__context__
 
     return " <- ".join(parts)
 

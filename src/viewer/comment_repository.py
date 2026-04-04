@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from threading import Lock
 from typing import Any
 from uuid import uuid4
 
@@ -41,10 +42,12 @@ class CommentRepository:
 
     def __init__(self, comments_dir: Any | None = None) -> None:
         # comments_dir は後方互換のため受け取るが使用しない。
+        self._lock = Lock()
         self._comments_by_date: dict[date, list[JournalComment]] = {}
 
     def list_comments(self, target_date: date) -> list[JournalComment]:
-        comments = self._comments_by_date.get(target_date, [])
+        with self._lock:
+            comments = list(self._comments_by_date.get(target_date, []))
         return sorted(comments, key=lambda item: item.created_at)
 
     def add_comment(
@@ -68,7 +71,8 @@ class CommentRepository:
             created_at=datetime.now(timezone.utc).replace(microsecond=0),
         )
 
-        self._comments_by_date.setdefault(target_date, []).append(comment)
+        with self._lock:
+            self._comments_by_date.setdefault(target_date, []).append(comment)
 
         return comment
 
