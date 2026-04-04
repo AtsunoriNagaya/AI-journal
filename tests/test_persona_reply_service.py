@@ -1,11 +1,13 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from src.viewer.persona_reply_service import (
     PersonaReplyService,
     _error_status_code,
     _is_retryable_error,
+    _load_openrouter_config,
 )
 
 
@@ -71,6 +73,33 @@ class PersonaReplyServiceTests(unittest.TestCase):
 
             service = PersonaReplyService(persona_path)
             self.assertEqual(service.persona_name, "23歳の新卒エンジニア")
+
+    def test_load_config_prefers_persona_retry_env(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENROUTER_API_KEY": "dummy",
+                "AI_JOURNAL_MAX_RETRIES": "7",
+                "AI_PERSONA_MAX_RETRIES": "3",
+            },
+            clear=True,
+        ):
+            config = _load_openrouter_config(max_output_tokens_default=320)
+
+        self.assertEqual(config.max_retries, 3)
+
+    def test_load_config_falls_back_to_journal_retry_env(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENROUTER_API_KEY": "dummy",
+                "AI_JOURNAL_MAX_RETRIES": "4",
+            },
+            clear=True,
+        ):
+            config = _load_openrouter_config(max_output_tokens_default=320)
+
+        self.assertEqual(config.max_retries, 4)
 
 
 if __name__ == "__main__":

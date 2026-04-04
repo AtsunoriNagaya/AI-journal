@@ -155,8 +155,9 @@ def _load_openrouter_config(max_output_tokens_default: int) -> _OpenRouterConfig
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
-    model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.6-plus-preview:free")
-    max_retries = _read_int_env("AI_JOURNAL_MAX_RETRIES", default=2, minimum=0)
+    model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.6-plus:free")
+    # 新しい専用変数を優先し、未設定時のみ既存変数を後方互換として参照する。
+    max_retries = _read_retry_count_env(default=2)
     max_output_tokens = _read_int_env(
         "AI_JOURNAL_MAX_OUTPUT_TOKENS",
         default=max_output_tokens_default,
@@ -203,6 +204,13 @@ def _read_int_env(name: str, *, default: int, minimum: int) -> int:
     except ValueError:
         return default
     return max(value, minimum)
+
+
+def _read_retry_count_env(*, default: int) -> int:
+    persona_raw = os.getenv("AI_PERSONA_MAX_RETRIES")
+    if persona_raw is not None and persona_raw.strip() != "":
+        return _read_int_env("AI_PERSONA_MAX_RETRIES", default=default, minimum=0)
+    return _read_int_env("AI_JOURNAL_MAX_RETRIES", default=default, minimum=0)
 
 
 def _retry_delay_seconds(error: Exception, retry: int) -> float:

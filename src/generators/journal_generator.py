@@ -44,7 +44,7 @@ def _load_openrouter_config(max_output_tokens_default: int = 2600) -> OpenRouter
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
-    model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.6-plus-preview:free")
+    model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.6-plus:free")
     max_retries = _read_int_env("AI_JOURNAL_MAX_RETRIES", default=1, minimum=0)
     max_output_tokens = _read_int_env("AI_JOURNAL_MAX_OUTPUT_TOKENS", default=max_output_tokens_default, minimum=1)
     site_url = os.getenv("OPENROUTER_SITE_URL", "")
