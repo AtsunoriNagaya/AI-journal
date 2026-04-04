@@ -232,7 +232,9 @@ uv run -c "from src.input.character_setting import load_setting_from_markdown; s
 
 ## ライセンス
 
-（プロジェクト依存）
+MIT License
+
+詳細は [LICENSE](LICENSE) を参照してください。
 
 ## サポート
 
