@@ -42,6 +42,12 @@ def _enforce_safe_rel(attrs: dict[tuple[str | None, str], str], new: bool = Fals
     return attrs
 
 
+def _remove_target_attribute(attrs: dict[tuple[str | None, str], str], new: bool = False):
+    """linkify 後に target 属性が混入しても必ず除去する。"""
+    attrs.pop((None, "target"), None)
+    return attrs
+
+
 def render_markdown_html(markdown_text: str) -> str:
     """Markdown を HTML に変換し、安全なタグのみ残す。"""
 
@@ -56,4 +62,7 @@ def render_markdown_html(markdown_text: str) -> str:
         protocols=["http", "https", "mailto"],
         strip=True,
     )
-    return bleach.linkify(clean_html, callbacks=[*DEFAULT_CALLBACKS, _enforce_safe_rel])
+    return bleach.linkify(
+        clean_html,
+        callbacks=[*DEFAULT_CALLBACKS, _enforce_safe_rel, _remove_target_attribute],
+    )

@@ -165,6 +165,30 @@ class WebUiApiTests(unittest.TestCase):
         self.assertEqual(payload["comment_count"], 1)
         self.assertEqual(payload["comments"][0]["role"], "user")
 
+    def test_missing_openrouter_key_still_saves_user_comment(self) -> None:
+        with patch("web_ui.load_dotenv", return_value=False):
+            with patch.dict("os.environ", {"OPENROUTER_API_KEY": ""}):
+                app = create_app(journals_dir=self.journals_dir)
+                client = TestClient(app)
+
+                response = client.post(
+                    "/comments/2026-04-07",
+                    data={"author": "テスト", "body": "キー未設定時の投稿"},
+                    follow_redirects=False,
+                )
+
+        self.assertEqual(response.status_code, 303)
+        location = response.headers["location"]
+
+        page = client.get(location)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("コメントは保存しましたが、ペルソナ返信の生成に失敗しました。", page.text)
+
+        detail = client.get("/api/journals/2026-04-07")
+        payload = detail.json()
+        self.assertEqual(payload["comment_count"], 1)
+        self.assertEqual(payload["comments"][0]["role"], "user")
+
     def test_comments_reset_after_app_restart(self) -> None:
         response = self.client.post(
             "/comments/2026-04-07",

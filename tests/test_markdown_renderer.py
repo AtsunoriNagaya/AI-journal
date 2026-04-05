@@ -19,6 +19,14 @@ class MarkdownRendererTests(unittest.TestCase):
 
         self.assertIn('rel="nofollow noopener noreferrer"', html)
 
+    def test_markdown_link_never_has_target_attribute(self) -> None:
+        markdown_text = "[safe link](https://example.com)"
+
+        html = render_markdown_html(markdown_text)
+
+        self.assertIn('href="https://example.com"', html)
+        self.assertNotIn('target="_blank"', html)
+
 
 if __name__ == "__main__":
     unittest.main()
