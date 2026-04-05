@@ -80,6 +80,7 @@ API 例：
 ペルソナ返信の設定：
 - `OPENROUTER_API_KEY` を設定しておくと、コメント投稿時に `config/persona.md` の主人公として返信が生成されます
 - 返信に使うペルソナファイルは `AI_JOURNAL_PERSONA_PATH` で変更できます
+- `OPENROUTER_API_KEY` 未設定時や返信生成失敗時でも、ユーザーコメントは保存されます（画面には返信失敗の警告が表示されます）
 
 ## 設定方法
 
