@@ -71,13 +71,6 @@ def _pick_section(sections: dict[str, str], candidates: list[str]) -> str:
     raise ValueError(f"Markdown見出しが見つかりません: {names}")
 
 
-def _pick_optional_section(sections: dict[str, str], candidates: list[str], default: str) -> str:
-    for key in candidates:
-        if key in sections and sections[key].strip():
-            return sections[key].strip()
-    return default
-
-
 # 期間セクションから開始日を抽出する。
 def _extract_date(text: str) -> date:
     match = re.search(r"(\d{4}-\d{2}-\d{2})", text)
@@ -139,27 +132,17 @@ def _extract_incidents(text: str) -> tuple[Incident, ...]:
 
 # 補足設定セクションから追加フィールドを抽出する。
 def _extract_supplement_fields(text: str) -> dict[str, str]:
-    defaults = {
-        "living_area": "自宅と職場周辺",
-        "hobbies": "読書や軽い散歩",
-        "concerns": "仕事への不安と生活リズムの維持",
-        "likely_events": "通勤や会議、買い物などの小さな出来事",
-        "avoid_patterns": "過剰なドラマや不自然な偶然",
-        "growth_direction": "焦りから落ち着きへ、少しずつ慣れていく",
-    }
-    if not text.strip():
-        return defaults
+    required_labels = [
+        ("よく使う行動範囲", "living_area"),
+        ("興味・趣味", "hobbies"),
+        ("不安や悩み", "concerns"),
+        ("日常で起こりやすいこと", "likely_events"),
+        ("避けたい展開", "avoid_patterns"),
+        ("1週間を通して見せたい変化", "growth_direction"),
+    ]
+    label_to_field = dict(required_labels)
 
-    label_to_field = {
-        "よく使う行動範囲": "living_area",
-        "興味・趣味": "hobbies",
-        "不安や悩み": "concerns",
-        "日常で起こりやすいこと": "likely_events",
-        "避けたい展開": "avoid_patterns",
-        "1週間を通して見せたい変化": "growth_direction",
-    }
-
-    values = dict(defaults)
+    values: dict[str, str] = {}
     for raw_line in text.splitlines():
         line = re.sub(r"^\s*[-*]\s*", "", raw_line).strip()
         if not line:
@@ -173,6 +156,11 @@ def _extract_supplement_fields(text: str) -> dict[str, str]:
         field_name = label_to_field.get(raw_label)
         if field_name and value:
             values[field_name] = value
+
+    missing_labels = [label for label, field_name in required_labels if not values.get(field_name)]
+    if missing_labels:
+        names = ", ".join(missing_labels)
+        raise ValueError(f"補足設定の項目が不足しています: {names}")
 
     return values
 
@@ -191,42 +179,18 @@ def load_setting_from_markdown(file_path: str = "persona.md") -> JournalSetting:
     text = Path(file_path).read_text(encoding="utf-8-sig")
 
     sections = _parse_sections(text)
-    role_text = _pick_section(sections, ["主人公", "キャラクター", "人物設定"])
-    background_text = _pick_section(sections, ["状況", "背景"])
+    role_text = _pick_section(sections, ["主人公"])
+    background_text = _pick_section(sections, ["背景"])
     period_text = _pick_section(sections, ["期間"])
-    weekly_theme = _pick_optional_section(
-        sections,
-        ["1週間のテーマ", "週のテーマ", "全体テーマ"],
-        "新卒エンジニアとして、外出自粛の中で仕事に少しずつ慣れていく一週間",
-    )
-    weekday_style = _pick_optional_section(
-        sections,
-        ["平日傾向", "平日の過ごし方", "平日"],
-        "仕事、通勤、オンライン会議、昼休み、同僚とのやり取りを中心にする",
-    )
-    weekend_style = _pick_optional_section(
-        sections,
-        ["休日傾向", "休日の過ごし方", "休日"],
-        "家での休息、買い物、軽い気分転換、生活の整え直しを中心にする",
-    )
-    tone_keywords = _pick_optional_section(
-        sections,
-        ["文体", "トーン", "文体キーワード"],
-        "自然体、やわらかい、読みやすい",
-    )
-    target_reader = _pick_optional_section(
-        sections,
-        ["想定読者", "読者", "ターゲット読者"],
-        "同じように日常を積み重ねる読者",
-    )
-    realism_constraints = _pick_optional_section(
-        sections,
-        ["現実味の制約", "制約", "リアリティ"],
-        "主人公の生活圏で起こりうる出来事に限定し、過剰な偶然や大事件は避ける",
-    )
-    supplement_text = sections.get("補足設定", "")
+    weekly_theme = _pick_section(sections, ["1週間のテーマ"])
+    weekday_style = _pick_section(sections, ["平日傾向"])
+    weekend_style = _pick_section(sections, ["休日傾向"])
+    tone_keywords = _pick_section(sections, ["文体"])
+    target_reader = _pick_section(sections, ["想定読者"])
+    realism_constraints = _pick_section(sections, ["現実味の制約"])
+    supplement_text = _pick_section(sections, ["補足設定"])
     supplement = _extract_supplement_fields(supplement_text)
-    event_text = sections.get("イベント") or sections.get("出来事") or sections.get("インシデント", "")
+    event_text = sections.get("イベント", "")
     incidents = _extract_incidents(event_text)
 
     setting = JournalSetting(

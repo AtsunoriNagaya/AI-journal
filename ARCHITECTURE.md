@@ -53,6 +53,36 @@
   - 依存: すべてのモジュール
   - アウトプット: 保存先ディレクトリ指定（`journals/`）
 
+### 閲覧層（Web UI）
+- **web_ui.py**
+  - 責務: 生成済み Markdown の一覧・検索・詳細表示 API と HTML 画面を提供
+  - 処理:
+    - `journals/` から読み込み
+    - 日付降順ソート
+    - キーワード検索
+    - 前日/翌日ナビゲーション
+  - 依存: `src/viewer/journal_repository.py`、`src/viewer/markdown_renderer.py`
+  - アウトプット: ブラウザ向け HTML と `/api/journals*` の JSON
+
+- **src/viewer/journal_repository.py**
+  - 責務: `journals/YYYY-MM-DD.md` の列挙・読み込み・検索・隣接日計算
+  - 依存: なし（ファイル読み込みのみ）
+
+- **src/viewer/markdown_renderer.py**
+  - 責務: Markdown を HTML に変換し、許可タグのみ残す
+  - 依存: markdown, bleach
+
+- **src/viewer/comment_repository.py**
+  - 責務: 日記ごとのコメント保持・読み込み（プロセス内メモリ）
+  - 保存期間: Web UI 起動中のみ（再起動でリセット）
+  - 依存: なし
+
+- **src/viewer/persona_reply_service.py**
+  - 責務: コメント本文に対するペルソナ返信の生成（OpenRouter）
+  - 入力: `config/persona.md`、`config/prompts.md`（返信用セクション）、対象日の日記本文、最近のコメント履歴
+  - 依存: `src/templates/prompt_templates.py`（返信プロンプト読込）
+  - アウトプット: ペルソナ返信テキスト
+
 ## スタック
 
 - **Python 3.11+**: タイプセーフな実装、ジェネリクス対応
@@ -78,6 +108,16 @@ config/persona.md
 OpenRouter API
   ↓
 stdout + journals/*.md → 日記本文
+  ↓
+[src/viewer/journal_repository.py] + [src/viewer/markdown_renderer.py]
+  ↓
+[web_ui.py] → HTML UI / JSON API
+  ↓
+comment_repository 経由でコメント投稿・表示
+  ↓
+persona_reply_service 経由でペルソナ返信生成
+  ↓
+[src/templates/prompt_templates.py] ← config/prompts.md（返信用セクション）
 ```
 
 ## 日別生成ループ
@@ -109,6 +149,16 @@ Day 7:
 ### 新しい出力形式（e.g., JSON）
 - **追加場所**: `src/generators/journal_generator.py` の最終出力処理
 - **注意**: メモリ層（LangChain）はテキストを扱うため、構造化データ化する場合は日別生成後に変換する
+
+### コメント返信機能（実装済み）
+- **実装場所**: `web_ui.py` のコメント投稿エンドポイント + `src/viewer/comment_repository.py` + `src/viewer/persona_reply_service.py`
+- **現在の仕様**:
+  - コメント履歴はプロセス内メモリ保持（Web UI 再起動でリセット）
+  - 返信生成は OpenRouter API を利用し、返信プロンプトは `config/prompts.md` のセクションから読み込む
+  - 返信生成失敗時はユーザーコメントのみ保存
+- **今後の拡張候補**:
+  - コメント履歴の永続化（SQLite など）
+  - 返信失敗時の再実行キューや管理画面の追加
 
 ### 新しい入力形式（e.g., YAML）
 - **追加場所**: `src/input/character_setting.py` に新パーサーを追加
@@ -162,7 +212,7 @@ def test_build_day_prompt():
 ## 開発時の注意
 
 - **ブレーキングチェンジ**: `JournalSetting` の構造変更は他すべてに影響するため、慎重に
-- **テンプレート管理**: `config/prompts.md` のセクション名は `src/templates/prompt_templates.py` で参照される
+- **テンプレート管理**: `config/prompts.md` のセクション名（`src/builders/prompt_builder.py` と `src/viewer/persona_reply_service.py` が利用）は `src/templates/prompt_templates.py` 経由で参照される
 - **環境変数**: `.env.example` はプロジェクトルートを正とする
 
 ## まとめ

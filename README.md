@@ -50,9 +50,51 @@ journals/
    ...
 ```
 
+## Web UIで確認する
+
+生成済みの日記をブラウザで確認できます。
+
+```bash
+uv run uvicorn web_ui:app --reload
+```
+
+起動後、`http://127.0.0.1:8000` を開いてください。
+
+初版の機能：
+- 日付一覧（新しい順）
+- Markdown の整形表示
+- 本文キーワード検索
+- 前日/翌日への移動
+- 日記ごとのコメント投稿・表示
+- コメント投稿時のペルソナ自動返信
+- スマホ表示対応
+
+API 例：
+- `GET /api/journals?q=通信`（一覧・検索）
+- `GET /api/journals/2026-04-07`（詳細）
+
+コメントの保存方式：
+- コメントは Web UI プロセス内メモリに保持されます
+- サーバー再起動（`uvicorn` 再起動）でコメントはリセットされます
+
+ペルソナ返信の設定：
+- `OPENROUTER_API_KEY` を設定しておくと、コメント投稿時に `config/persona.md` の主人公として返信が生成されます
+- 返信に使うペルソナファイルは `AI_JOURNAL_PERSONA_PATH` で変更できます
+
 ## 設定方法
 
 ### ペルソナ設定（config/persona.md）
+
+注意:
+- 見出し名は固定です（後方互換の別名見出しは廃止）。
+- 必須見出し: `主人公` / `背景` / `期間` / `1週間のテーマ` / `平日傾向` / `休日傾向` / `文体` / `想定読者` / `現実味の制約` / `補足設定`
+- `補足設定` は次の6項目すべてが必須です。
+   - よく使う行動範囲
+   - 興味・趣味
+   - 不安や悩み
+   - 日常で起こりやすいこと
+   - 避けたい展開
+   - 1週間を通して見せたい変化
 
 ```markdown
 ## 主人公
@@ -94,22 +136,29 @@ journals/
 - `# Common Guidelines`: 全日共通のガイドライン
 - `# Daily User Prompt Template`: 日別プロンプトテンプレート
    - 使用可能な変数: `{persona_block}`, `{date}`, `{day_number}`, `{total_days}`, `{day_mode}`, `{fixed_event_today}`, `{previous_summary}`, `{structure_hint}`, `{uniqueness_hint}`, `{avoid_repetition_hint}`
+- `# Daily Prompt Default Previous Summary`: 1日目の既定要約文
+- `# Daily Prompt Default Avoid Repetition Hint`: 重複回避ヒント未指定時の既定文
+- `# Weekday Structure Hints` / `# Weekend Structure Hints`: 日別の構成ヒント候補
+- `# Uniqueness Hint Template`: 固有性ヒント文のテンプレート
+- `# Persona Reply System Prompt`: コメント返信の system プロンプト
+- `# Persona Reply User Prompt Template`: コメント返信の user プロンプト
+- `# Persona Reply Empty History`: 会話履歴が空のときの表示文
 
 ### 環境変数設定（.env）
 
+環境変数の一覧と説明は [.env.example](.env.example) を正本にしています。
+値を追加・変更するときは、`.env` だけでなく `.env.example` も更新してください。
+
+最小構成の例:
+
 ```env
-# 必須
 OPENROUTER_API_KEY=your-api-key-here
-
-# 用意推奨
-OPENROUTER_MODEL=qwen/qwen3.6-plus-preview:free
-
-# オプション（デフォルト値あり）
-AI_JOURNAL_MAX_RETRIES=1
-AI_JOURNAL_MAX_OUTPUT_TOKENS=900
-OPENROUTER_SITE_URL=https://example.com
-OPENROUTER_SITE_NAME=MyApp
+OPENROUTER_MODEL=qwen/qwen3.6-plus:free
 ```
+
+補足:
+- コメント返信の再試行回数は `AI_PERSONA_MAX_RETRIES` のみ参照します。
+- `AI_JOURNAL_MAX_RETRIES` へのフォールバックは廃止されています。
 
 ## ファイル構成
 
@@ -120,6 +169,15 @@ OPENROUTER_SITE_NAME=MyApp
 | **src/templates/prompt_templates.py** | config/prompts.md のテンプレート読み込み |
 | **src/builders/prompt_builder.py** | 日別プロンプトの生成 |
 | **src/generators/journal_generator.py** | OpenRouter API 呼び出し・メモリ管理 |
+| **src/utils/env_utils.py** | 環境変数の共通パーサー |
+| **src/utils/text_utils.py** | 文字列の空白正規化ヘルパー |
+| **src/viewer/journal_repository.py** | journals/ の日記読み込み・検索・日付移動計算 |
+| **src/viewer/comment_repository.py** | 日記ごとのコメントをメモリ保持（再起動でリセット） |
+| **src/viewer/persona_reply_service.py** | コメントへのペルソナ返信を生成 |
+| **src/viewer/markdown_renderer.py** | Markdown を安全な HTML に変換 |
+| **web_ui.py** | FastAPI ベースの閲覧 UI エントリーポイント |
+| **webapp/templates/index.html** | 閲覧画面テンプレート |
+| **webapp/static/styles.css** | 閲覧画面のスタイル |
 | **config/persona.md** | ペルソナ・期間・固定条件の定義 |
 | **config/prompts.md** | System・共通・日別プロンプトテンプレート |
 | **ARCHITECTURE.md** | 詳細な責務と拡張ガイド |
@@ -189,7 +247,9 @@ uv run -c "from src.input.character_setting import load_setting_from_markdown; s
 
 ## ライセンス
 
-（プロジェクト依存）
+MIT License
+
+詳細は [LICENSE](LICENSE) を参照してください。
 
 ## サポート
 
